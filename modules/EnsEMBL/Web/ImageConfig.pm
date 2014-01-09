@@ -1423,7 +1423,7 @@ sub update_track_renderer {
   my $flag  = 0;
 
   ## Set renderer to something sensible if user has specified invalid one. 'off' is usually first option, so take next one
-  $renderer = $valid{'normal'} ? 'normal' : $renderers->[2] if $renderer ne 'off' && !$valid{$renderer};
+  $renderer = $valid{'normal'} ? 'normal' : $renderers->[2] if $renderer !~ /^(off|default)$/ && !$valid{$renderer};
 
   # if $on_off == 1, only allow track enabling/disabling. Don't allow enabled tracks' renderer to be changed.
   $flag += $node->set_user('display', $renderer) if (!$on_off || $renderer eq 'off' || $node->get('display') eq 'off');
