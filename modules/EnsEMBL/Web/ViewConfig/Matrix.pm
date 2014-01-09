@@ -42,17 +42,16 @@ sub init {
 }
 
 sub form {
-  my $self          = shift;
-  my $hub           = $self->hub;
-  my $img_url       = $self->img_url;
-  my $image_config  = $self->matrix_image_config;
-  my $user_settings = $image_config->get_user_settings;
-  my $tree          = $image_config->tree;
-  my $menu          = $hub->param('menu');
-  my $menu_node     = $tree->get_node($menu);
-  my $matrix_data   = $menu_node->data->{'matrix'};
-  my @matrix_rows   = sort { $a->{'group_order'} <=> $b->{'group_order'} || lc ($a->{'group'} || 'zzzzz') cmp lc ($b->{'group'} || 'zzzzz') || lc $a->{'id'} cmp lc $b->{'id'} } values %{$matrix_data->{'rows'}};
-  my @filters       = ([ '', 'All classes' ]);
+  my $self         = shift;
+  my $hub          = $self->hub;
+  my $img_url      = $self->img_url;
+  my $image_config = $self->matrix_image_config;
+  my $tree         = $image_config->tree;
+  my $menu         = $hub->param('menu');
+  my $menu_node    = $tree->get_node($menu);
+  my $matrix_data  = $menu_node->data->{'matrix'};
+  my @matrix_rows  = sort { $a->{'group_order'} <=> $b->{'group_order'} || lc ($a->{'group'} || 'zzzzz') cmp lc ($b->{'group'} || 'zzzzz') || lc $a->{'id'} cmp lc $b->{'id'} } values %{$matrix_data->{'rows'}};
+  my @filters      = ([ '', 'All classes' ]);
   my (@columns, %renderer_counts, %cells, %features);
   
   foreach (@{$menu_node->child_nodes}) {
@@ -153,8 +152,8 @@ sub form {
           
           foreach my $feature (@$cell_features) {
             my $feature_id = $feature->id;
-            my $display    = $user_settings->{$feature_id}{'display'} || 'default';
-            my $renderer   = $user_settings->{$feature_id}{'display'} || $col_renderer;
+            my $display    = $feature->get('display');
+            my $renderer   = $display eq 'default' ? $col_renderer : $display;
             my $li_class   = $renderer eq 'off' ? '' : ' on';
             my $popup_menu;
             

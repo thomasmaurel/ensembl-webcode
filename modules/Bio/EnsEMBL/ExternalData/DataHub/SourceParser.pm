@@ -249,7 +249,8 @@ sub parse_file_content {
           my @values = split /\s+/, $value;
           
           if ($key eq 'parent') {
-            $tracks{$id}{$key} = $values[0]; # FIXME: throwing away on/off setting for now
+            $tracks{$id}{$key} = $values[0];
+            $tracks{$id}{'on'} = 1 if $values[1] eq 'on';
             next;
           } else {
             $tracks{$id}{$key}{'name'}  = shift @values;

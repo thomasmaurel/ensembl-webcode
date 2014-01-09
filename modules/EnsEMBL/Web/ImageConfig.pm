@@ -805,6 +805,27 @@ sub _add_datahub_tracks {
     datahub      => 1,
   );
   
+  # UCSC visibility  =>  Ensembl display
+  #   hide           =>    none 
+  #   dense          =>    bigwig, bigbed, vcf = compact, bam = normal?
+  #   squish         =>    bam, vcf => histogram, bigwig => tiling, bigbed => compact (but all drawing should be half-height)
+  #   pack           =>    bigbed, bam => normal, bigwig => tiling, vcf => histogram
+  #   full           =>    bigwig = tiling, bigbed = labels, bam = unlimited, vcf = histogram
+  #
+  # We do not seem to distinguish pack and full - pack = normal, full = every feature is bumped to its own y position.
+  # For wiggle/historgam, pack scales down the y axis of full
+  # Squish is half-height version of pack, except for wiggle/histogram, where it is a half-height version of dense (compact)
+  #
+  # By DEFAULT, if $track->{'visibility'} > $config->{'visibility'}, $config->{'visibility'} is used instead
+  # But if the USER SETS DISPLAY, this overwrites the inheritance restrictions
+  my %visibility_map = (
+    hide   => { order => 0, default => 'off' },
+    dense  => { order => 1, default => 'compact',   bam    => 'normal'  },
+    squish => { order => 2, default => 'histogram', bigwig => 'tiling', bigbed => 'compact'   }, # TODO: make this half-height in drawing code
+    pack   => { order => 3, default => 'normal',    bigwig => 'tiling', vcf    => 'histogram' },
+    full   => { order => 4, bigbed  => 'labels',    bigwig => 'tiling', vcf    => 'histogram',  bam => 'unlimited' },
+  );
+  
   if ($matrix) {
     $options{'matrix_url'} = $hub->url('Config', { action => 'Matrix', function => $hub->action, partial => 1, menu => $options{'submenu_key'} });
     
@@ -843,7 +864,6 @@ sub _add_datahub_tracks {
   foreach (@{$parent->child_nodes}) {
     my $track        = $_->data;
     my $type         = ref $track->{'type'} eq 'HASH' ? uc $track->{'type'}{'format'} : uc $track->{'type'};
-    my $squish       = $track->{'visibility'} eq 'squish' || $config->{'visibility'} eq 'squish'; # FIXME: make it inherit correctly
     (my $source_name = $track->{'shortLabel'}) =~ s/_/ /g;
     my $source       = {
       name        => $track->{'track'},
@@ -852,9 +872,22 @@ sub _add_datahub_tracks {
       source_url  => $track->{'bigDataUrl'},
       colour      => exists $track->{'color'} ? $track->{'color'} : undef,
       no_titles   => $type eq 'BIGWIG', # To improve browser speed don't display a zmenu for bigwigs
-      squish      => $squish,
       %options
     };
+    
+    if ($track->{'on'} && ($track->{'visibility'} || $config->{'visibility'})) {
+      my $vis;
+      
+      if ($track->{'visibility'} && $config->{'visibility'}) {
+        $vis = $visibility_map{$config->{'visibility'}}{'order'} > $visibility_map{$track->{'visibility'}}{'order'} ? $track->{'visibility'} : $config->{'visibility'};
+      } else {
+        $vis = $track->{'visibility'} || $config->{'visibility'};
+      }
+      
+      $source->{'default_display'} = $visibility_map{$vis}{lc $track->{'type'}} || $visibility_map{$vis}{'default'} if $vis;
+    }
+    
+    $source->{'default_display'} ||= 'default';
     
     # Graph range - Track Hub default is 0-127
     if (exists $track->{'viewLimits'}) {
@@ -875,11 +908,12 @@ sub _add_datahub_tracks {
       # means the short label can be very non specific, because the header gives context of what type of
       # track it is. For Ensembl we need to have all the information in the track name / caption
       ($source->{'source_name'} = $track->{'longLabel'}) =~ s/_/ /g;
-     
+      
       $source->{'matrix'} = {
         menu   => $options{'submenu_key'},
         column => $options{'axis_labels'}{'x'}{$track->{'subGroups'}{$config->{'dimensions'}{'x'}}},
         row    => $options{'axis_labels'}{'y'}{$track->{'subGroups'}{$config->{'dimensions'}{'y'}}},
+        on     => $track->{'on'},
       };
       
       $source->{'column_data'} = { description => $info, no_subtrack_description => 1 };
@@ -902,21 +936,10 @@ sub _add_datahub_extras_options {
     $args{'options'}{'height'} = $default_height if $default_height > 0;
   }
   
-  # Alternative rendering order for genome segmentation and similar
-  if ($args{'source'}{'squish'}) {
-    $args{'renderers'} = [
-      'off',     'Off',
-      'compact', 'Continuous',
-      'normal',  'Separate',
-      'labels',  'Separate with labels',
-    ];
-  }
-  
   $args{'options'}{'viewLimits'} = $args{'menu'}{'viewLimits'} || $args{'source'}{'viewLimits'} if exists $args{'menu'}{'viewLimits'} || exists $args{'source'}{'viewLimits'};
   $args{'options'}{'no_titles'}  = $args{'menu'}{'no_titles'}  || $args{'source'}{'no_titles'}  if exists $args{'menu'}{'no_titles'}  || exists $args{'source'}{'no_titles'};
   $args{'options'}{'set'}        = $args{'source'}{'submenu_key'};
-  $args{'options'}{'subset'}     = $self->tree->clean_id($args{'source'}{'submenu_key'}, '\W') unless $args{'source'}{'matrix'};
-  $args{'options'}{$_}           = $args{'source'}{$_} for qw(datahub matrix column_data colour description);
+  $args{'options'}{$_}           = $args{'source'}{$_} for qw(datahub matrix column_data colour description default_display);
   
   return %args;
 }
@@ -1781,6 +1804,7 @@ sub add_matrix {
   my $column       = $matrix->{'column'};
   my $subset       = $matrix->{'menu'};
   my @rows         = $matrix->{'rows'} ? @{$matrix->{'rows'}} : $matrix;
+  my %cells_on     = map { $_->{'on'} ? ("$column:$_->{'row'}" => $_->{'on'}) : () } @rows;
   my $column_key   = $self->tree->clean_id("${subset}_$column");
   my $column_track = $self->get_node($column_key);
   
@@ -1806,7 +1830,7 @@ sub add_matrix {
   $data->{'column_key'}  = $column_key;
   $data->{'menu'}        = 'matrix_subtrack';
   $data->{'source_name'} = $data->{'name'};
-  $data->{'display'}     = 'default';
+  $data->{'display'}     = $data->{'default_display'} || 'default';
   
   if (!$menu_data->{'matrix'}) {
     my $hub = $self->hub;
@@ -1825,7 +1849,7 @@ sub add_matrix {
     $column_track->append($self->create_track($option_key, $_->{'row'}, {
       node_type => 'option',
       menu      => 'no',
-      display   => $_->{'on'} ? 'on' : 'off',
+      display   => $cells_on{"$column:$_->{'row'}"} ? 'on' : 'off',
       renderers => [qw(on on off off)],
       caption   => "$column - $_->{'row'}",
     }));
