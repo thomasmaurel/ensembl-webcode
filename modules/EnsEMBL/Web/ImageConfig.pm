@@ -595,6 +595,7 @@ sub load_user_tracks {
       style       => $entry->{'style'},
       colour      => $entry->{'colour'},
       display     => $entry->{'display'},
+      json        => $entry->{'json'}, # FIXME: Shouldn't be stored here
       timestamp   => $entry->{'timestamp'} || time,
     };
   }
@@ -646,6 +647,7 @@ sub load_user_tracks {
         style       => $entry->style,
         colour      => $entry->colour,
         display     => 'off',
+      # json        => $entry->json, # FIXME: Shouldn't be stored here
         timestamp   => $entry->timestamp,
       };
     }
@@ -677,7 +679,7 @@ sub load_user_tracks {
         external => 'user'
       );
     } elsif (lc $url_sources{$code}{'format'} eq 'datahub') {
-      $self->_add_datahub($url_sources{$code}{'source_name'}, $url_sources{$code}{'source_url'}) if $datahubs;
+      $self->_add_datahub($url_sources{$code}{'source_name'}, $url_sources{$code}{'source_url'}, $url_sources{$code}{'json'}) if $datahubs;
     } else {
       $self->_add_flat_file_track($menu, 'url', $code, $url_sources{$code}{'source_name'},
         sprintf('
@@ -737,23 +739,63 @@ sub load_user_tracks {
   $ENV{'CACHE_TAGS'}{'user_data'} = sprintf 'USER_DATA[%s]', md5_hex(join '|', map $_->id, $menu->nodes) if $menu->has_child_nodes;
 }
 
-sub _add_datahub {
-  my ($self, $menu_name, $url) = @_;
-  my $parser   = Bio::EnsEMBL::ExternalData::DataHub::SourceParser->new({ timeout => 10, proxy => $self->hub->species_defs->ENSEMBL_WWW_PROXY });
-  my $menu     = $self->tree->append_child($self->create_submenu($menu_name, $menu_name, { external => 1, datahub_menu => 1 }));
-  my $hub_info = $parser->get_hub_info($url); ## Do we have data for this species?
+sub datahub_from_json {
+  my ($self, $file, $golden_path) = @_;
+  my $json;
   
-  if ($hub_info->{'error'}) {
-    warn "!!! COULD NOT CONTACT DATAHUB $url: $hub_info->{'error'}";
+  {
+    local $/ = undef;
+    open FH, $file or return;
+    $json = <FH>;
+    close FH;
+  }
+  
+  my $datahub = from_json($json)->{$golden_path};
+  
+  return unless $datahub;
+  
+  my $tree = EnsEMBL::Web::Tree->new;
+  
+  $self->make_datahub_tree($datahub, $tree);
+  
+  return $tree;
+}
+
+sub make_datahub_tree {
+  my ($self, $datahub, $tree) = @_;
+  
+  foreach (@$datahub) {
+    my $children = delete $_->{'_children'};
+    my $node     = $tree->append_child($tree->create_node($_->{'track'}, $_));
+    $self->make_datahub_tree($children, $node);
+  }
+}
+
+sub _add_datahub {
+  my ($self, $menu_name, $url, $json) = @_;
+  my $menu        = $self->tree->append_child($self->create_submenu($menu_name, $menu_name, { external => 1, datahub_menu => 1 }));
+  my $golden_path = $self->hub->species_defs->get_config($self->species, 'UCSC_GOLDEN_PATH');
+  my $datahub;
+  
+  if ($json) {
+    $datahub = $self->datahub_from_json($json, $golden_path);
   } else {
-    my $golden_path = $self->hub->species_defs->get_config($self->species, 'UCSC_GOLDEN_PATH');
-    my $source_list = $hub_info->{'genomes'}{$golden_path} || [];
+    my $parser   = Bio::EnsEMBL::ExternalData::DataHub::SourceParser->new({ timeout => 10, proxy => $self->hub->species_defs->ENSEMBL_WWW_PROXY });
+    my $hub_info = $parser->get_hub_info($url); ## Do we have data for this species?
     
-    return unless scalar @$source_list;
-    
-    ## Get tracks from hub
-    my $datahub = $parser->parse($source_list);
-    
+    if ($hub_info->{'error'}) {
+      warn "!!! COULD NOT CONTACT DATAHUB $url: $hub_info->{'error'}";
+    } else {
+      my $source_list = $hub_info->{'genomes'}{$golden_path} || [];
+      
+      return unless scalar @$source_list;
+      
+      ## Get tracks from hub
+      $datahub = $parser->parse($source_list);
+    }
+  }
+  
+  if ($datahub) {
     foreach my $node (@{$datahub->child_nodes}) {
       my $data = $node->data;
       

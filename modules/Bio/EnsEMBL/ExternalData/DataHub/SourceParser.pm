@@ -36,9 +36,8 @@ Anne Parker <ap5@sanger.ac.uk>
 package Bio::EnsEMBL::ExternalData::DataHub::SourceParser;
 
 use strict;
-use vars qw(@EXPORT_OK);
-use base qw(Exporter);
 
+use JSON qw(to_json);
 use LWP::UserAgent;
 
 use EnsEMBL::Web::Tree;
@@ -404,6 +403,19 @@ sub sort_tree {
   }
   
   $self->sort_tree($_) for @children;
+}
+
+sub parse_to_json {
+  my ($self, $genomes) = @_;
+  my %parsed = map { $_ => $self->make_json($self->parse($genomes->{$_})) } sort keys %$genomes;
+  my $json   = to_json(\%parsed);
+  return \$json;
+}
+
+sub make_json {
+  my ($self, $tree) = @_;
+  my @json = map {{ %{$_->data}, _children => $self->make_json($_) }} @{$tree->child_nodes};
+  return \@json;
 }
 
 1;

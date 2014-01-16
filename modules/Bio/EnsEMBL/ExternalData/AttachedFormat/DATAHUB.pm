@@ -19,8 +19,8 @@ limitations under the License.
 package Bio::EnsEMBL::ExternalData::AttachedFormat::DATAHUB;
 
 use strict;
-use warnings;
-no warnings 'uninitialized';
+
+use Digest::MD5 qw(md5_hex);
 
 use Bio::EnsEMBL::ExternalData::DataHub::SourceParser;
 
@@ -39,8 +39,9 @@ sub new {
 
 sub check_data {
   my $self = shift;
+  my $hub  = $self->{'hub'};
   my $url  = $self->{'url'};
-  my $error;
+  my ($error, %details);
   
   # try to open and use the datahub file
   # this checks that the datahub files is present and correct
@@ -49,9 +50,19 @@ sub check_data {
   if ($datahub->{'error'}) {
     $error  = "<p>Unable to open remote TrackHub file: $url</p>";
     $error .= "<p>$_.</p>" for ref $datahub->{'error'} eq 'ARRAY' ? @{$datahub->{'error'}} : $datahub->{'error'};
+  } else {
+    my $json = $self->{'datahub_adaptor'}->parse_to_json($datahub->{'genomes'});
+    my $file = $hub->species_defs->ENSEMBL_TMP_DIR . '/' . md5_hex($url) . '.datahub';
+    
+    open FH, ">$file" or return "Can't open $file for writing";
+    print FH $$json;
+    close FH;
+    
+    $details{'name'} = $datahub->{'details'}{'shortLabel'};
+    $details{'json'} = $file;
   }
   
-  return ($error, { name => $datahub->{'details'}{'shortLabel'} });
+  return ($error, \%details);
 }
 
 sub style {
