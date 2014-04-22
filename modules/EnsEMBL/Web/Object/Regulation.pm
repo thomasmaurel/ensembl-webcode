@@ -160,7 +160,7 @@ sub get_motif_features {
       $other_names_txt = ' ('.join(' ', @other_ftnames).')';
     }
     
-    $motifs{$mf->start .':'. $mf->end} = [ $bm_ftname.$other_names_txt,  $mf->score, $mf->binding_matrix->name];
+    $motifs{$mf->start .':'. $mf->end} = [ $bm_ftname.$other_names_txt,  $mf->score, $mf->binding_matrix->name, $mf->interdb_stable_id];
   }
 
   return \%motifs;
