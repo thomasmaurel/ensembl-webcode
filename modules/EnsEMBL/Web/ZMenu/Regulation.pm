@@ -99,7 +99,6 @@ sub content {
     
     foreach my $motif (sort keys %motif_features) {
       my ($name, $score, $binding_matrix_name, $stable_id) = @{$motif_features{$motif}};
-      my $bm_link = $self->hub->get_ExtURL_link($binding_matrix_name, 'JASPAR', $binding_matrix_name);
       my $mf_link = sprintf('<a href="%s">%s</a>', $self->hub->url({'type' => 'Motif', 'action' => 'Summary', 'mf' => $stable_id }), $binding_matrix_name);
       my $style   = (first { $_ eq $motif } @feat) ? ' style="background:#BBCCFF"' : '';
       

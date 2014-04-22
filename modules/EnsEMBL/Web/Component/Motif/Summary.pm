@@ -35,8 +35,9 @@ sub content {
   my $object  = $self->object;
   my $summary = $self->new_twocol;
 
-  $summary->add_row('Name', 'Egr1');
-  $summary->add_row('PWM ID', 'MA0162.1');
+  $summary->add_row('Name', $object->name);
+  my $bm_link = $self->hub->get_ExtURL_link($self->object->binding_matrix_name, 'JASPAR', $self->object->binding_matrix_name); 
+  $summary->add_row('Binding matrix', $bm_link);
   $summary->add_row('Score', '0.935');
 
   return $summary->render; 

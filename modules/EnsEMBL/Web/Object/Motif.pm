@@ -81,9 +81,26 @@ sub seq_region_strand { my $self = shift; return $self->Obj->strand;            
 sub slice             { my $self = shift; return $self->Obj->slice;                     }           
 sub seq_region_length { my $self = shift; return $self->Obj->slice->seq_region_length;  }
 
-sub fetch_all_objs {
+sub binding_matrix_name {
   my $self = shift;
-  return $self->_adaptor->fetch_all_by_stable_ID($self->stable_id);
+  return $self->Obj->binding_matrix->name;
+}
+
+sub name {
+  my $self = shift;
+  my $name = $self->Obj->binding_matrix->feature_type->name;
+  my (%af_names, @other_names);
+  map {$af_names{$_->feature_type->name} = undef} @{$self->Obj->associated_annotated_features};
+  foreach my $af_name(keys(%af_names)){
+    push @other_names, $af_name if $af_name ne $name;
+  }
+
+  my $other_names_txt = '';
+
+  if(@other_names){
+    $other_names_txt = ' ('.join(' ', @other_names).')';
+  }
+  return $name.$other_names_txt;
 }
 
 =pod

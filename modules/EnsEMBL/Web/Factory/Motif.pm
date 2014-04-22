@@ -46,7 +46,7 @@ sub createObjects {
   
     my $mf_adaptor = $db_adaptor->get_MotifFeatureAdaptor;
     
-    $motif = 1; #$mf_adaptor->fetch_by_interdb_stable_id($mf);
+    $motif = $mf_adaptor->fetch_by_interdb_stable_id($mf);
     
     $self->param('fdb', 'funcgen');
   }
