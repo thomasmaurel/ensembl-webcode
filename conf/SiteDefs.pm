@@ -233,6 +233,7 @@ our $OBJECT_TO_SCRIPT = {
   LRG                 => 'Page',
   Phenotype           => 'Page',
   Experiment          => 'Page',
+  Motif               => 'Page',
 
   Blast               => 'Page',
   Tools               => 'Page',
