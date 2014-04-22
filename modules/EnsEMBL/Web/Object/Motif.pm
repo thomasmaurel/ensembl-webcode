@@ -32,12 +32,12 @@ use base qw(EnsEMBL::Web::Object);
 sub short_caption {
   my $self = shift;
   return "Motif-based displays" unless shift eq 'global';
-  return 'Motif feature: '; # . $self->Obj->stable_id;
+  return 'Motif feature: ' . $self->binding_matrix_name;
 }
 
 sub caption {
   my $self    = shift;
-  my $caption = 'Motif Feature: '; #. $self->Obj->stable_id;
+  my $caption = 'Motif Feature: '. $self->binding_matrix_name;
   return $caption;    
 }
 
@@ -49,7 +49,7 @@ sub default_action {
 sub availability {
   my $self = shift;
   my $hash = $self->_availability;
-  $hash->{'regulation'} = 1;# if $self->Obj->isa('Bio::EnsEMBL::Funcgen::MotifFeature');
+  $hash->{'regulation'} = 1 if $self->Obj->isa('Bio::EnsEMBL::Funcgen::MotifFeature');
   return $hash;
 }
 
@@ -65,7 +65,7 @@ sub _adaptor {
 
 sub motif             { my $self = shift; return $self->Obj;                            }
 sub display_label     { my $self = shift; return $self->Obj->display_label;             }
-sub stable_id         { my $self = shift; return $self->Obj->stable_id;                 }
+sub stable_id         { my $self = shift; return $self->Obj->interdb_stable_id;         }
 sub analysis          { my $self = shift; return $self->Obj->analysis;                  }
 #sub attributes        { my $self = shift; return $self->Obj->regulatory_attributes;     }
 #sub bound_start       { my $self = shift; return $self->Obj->bound_start;               }
