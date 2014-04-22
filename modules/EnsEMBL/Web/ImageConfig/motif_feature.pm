@@ -25,9 +25,28 @@ use base qw(EnsEMBL::Web::ImageConfig);
 sub init {
   my $self = shift;
 
+  $self->set_parameters({
+    sortable_tracks => 0, # allow the user to reorder tracks
+    opt_lines       => 1, # draw registry lines
+  });
+
+  $self->create_menus(qw(
+    sequence
+    transcript
+    rnaseq
+    prediction
+    variation
+    somatic
+    functional
+    external_data
+    user_data
+    other
+    information
+  ));
   $self->image_resize = 1;
 
   $self->add_tracks('other',
+    [ 'spacer',  '', 'spacer',  { display => 'normal', strand => 'b', name => '', description => '' }],
     [ 'scalebar',  '', 'scalebar',  { display => 'normal', strand => 'b', name => 'Scale bar', description => 'Shows the scalebar' }],
     [ 'ruler',     '', 'ruler',     { display => 'normal', strand => 'b', name => 'Ruler',     description => 'Shows the length of the region being displayed' }],
     [ 'draggable', '', 'draggable', { display => 'normal', strand => 'b', menu => 'no' }],
@@ -39,6 +58,16 @@ sub init {
   );
   
   $self->load_tracks;
+
+    $self->modify_configs(
+    [ 'fg_regulatory_features_legend', 'fg_segmentation_features_legend', 'fg_methylation_legend' ],
+    { display => 'off' }
+  );
+
+  $self->modify_configs(
+    [ 'reg_feats_MultiCell' ],
+    { display => 'normal' }
+  );
 }
 
 1;

@@ -24,12 +24,11 @@ use base qw(EnsEMBL::Web::Configuration);
 
 sub populate_tree {
   my $self = shift;
-  $self->create_node('Summary', 'Summary',
+  $self->create_node('Summary', 'Logo',
     [qw( 
-        motif_feature EnsEMBL::Web::Component::Motif::Feature 
         sequence_logo EnsEMBL::Web::Component::Motif::Logo
     )],
-    { 'availability' => 'regulation', 'concise' => 'Summary' }
+    { 'availability' => 'regulation', 'concise' => 'Logo' }
   );
 }
 

@@ -566,6 +566,7 @@ sub render {
         $self->{'hidden'}{$_}
       );
     }
+    warn ">>> TOP TOOLBAR $top_toolbar";
     
     $html .= sprintf(
       $self->centred ? 
