@@ -44,6 +44,7 @@ sub OBJECT_PARAMS {
     [ 'StructuralVariation' => 'sv'  ],
     [ 'Regulation'          => 'rf'  ],
     [ 'Experiment'          => 'ex'  ],
+    [ 'Motif'               => 'mf'  ],
     [ 'Marker'              => 'm'   ],
     [ 'LRG'                 => 'lrg' ],
     [ 'GeneTree'            => 'gt'  ],
