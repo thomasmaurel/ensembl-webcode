@@ -31,10 +31,35 @@ sub _init {
 }
 
 sub content {
-  my $self    = shift;
-  my $object  = $self->object;
+  my $self  = shift;
+  my $hub   = $self->hub;
+  my $motif = $self->object->Obj;
 
-  return '<div class="tinted-box">[SEQUENCE LOGO IMAGE]</div>'; 
+  my $feature_slice = $motif->feature_Slice;
+  $feature_slice = $feature_slice->invert if $motif->seq_region_strand < 0;
+
+  my $image_config = $self->hub->get_imageconfig('sequence_logo');
+
+  $image_config->set_parameters({
+    container_width => $feature_slice->length,
+    image_width     => $self->image_width || 800,
+    slice_number    => '1|1',
+  });
+
+  ## Show the ruler and sequence only on the same strand as the motif
+  $image_config->modify_configs(
+    [ 'ruler', 'scalebar', 'seq' ],
+    { 'strand', $motif->strand > 0 ? 'f' : 'r' }
+  );
+
+  my $image = $self->new_image($feature_slice, $image_config);
+
+  $image->imagemap         = 'yes';
+  $image->{'panel_number'} = 'top';
+  $image->set_button('drag', 'title' => 'Drag to select region');
+
+  return $image->render;
+  #return "DONE!";
 }
 
 1;
