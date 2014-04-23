@@ -118,12 +118,13 @@ sub tag {
   
   # Motif features
   while (my ($mf_start, $mf_end) = splice @mf_loci, 0, 2) { 
+    #warn ">>> MOTIF FEATURE $mf_start - $mf_end";
     push @result, {
       style  => 'rect',
       colour => 'black',
       start  => $mf_start,
       end    => $mf_end,
-      class  => 'group'
+      class  => 'group',
     };
   }
   
@@ -169,19 +170,45 @@ sub render_tag {
 
 sub highlight {
   my ($self, $f, $composite, $pix_per_bp, $h) = @_;
-  return unless $self->{'config'}->get_option('opt_highlight_feature') != 0;
+  my $config = $self->{'config'};
+  return unless $config->get_option('opt_highlight_feature') != 0;
 
-  my %highlights = map { $_ => 1 } $self->highlights;  
-  return unless $highlights{$f->stable_id};
-  
-  $self->unshift($self->Rect({
-    x         => $composite->x - 2/$pix_per_bp,
-    y         => $composite->y - 2,
-    width     => $composite->width + 4/$pix_per_bp,
-    height    => $h + 4,
-    colour    => 'highlight2',
-    absolutey => 1,
-  }));
+  my $mf  = $config->hub->param('mf');
+
+  if ($mf && $config->hub->type eq 'Motif') {
+    my $motif = $config->hub->database('funcgen')->get_MotifFeatureAdaptor->fetch_by_interdb_stable_id($mf);
+ #   my @loci       = @{$f->get_underlying_structure};
+ #   my $bound_end  = pop @loci;
+ #   my $end        = pop @loci;
+ #   my ($bound_start, $start, @mf_loci) = @loci;
+ #   foreach (@mf_loci) {
+   # warn ">>> X ".$composite." => Y ".$composite->y;
+   # warn ">>> WIDTH ".$composite->width;
+   # warn ">>> FSTART ".$f->start;
+   # warn ">>> MSTART ".$motif->start;
+   # warn ">>> START ".($composite->x + $f->start - $motif->start - 2);
+    $self->unshift($self->Rect({
+      x         => $composite->x + $f->start - $motif->start - 2/$pix_per_bp,
+      y         => $composite->y - 2,
+      width     => $motif->start - $motif->end + 4/$pix_per_bp,
+      height    => $h + 4,
+      colour    => 'highlight2',
+      absolutey => 1,
+    }));
+  }
+  else {
+    my %highlights = map { $_ => 1 } $self->highlights;  
+    return unless $highlights{$f->stable_id};
+
+    $self->unshift($self->Rect({
+      x         => $composite->x - 2/$pix_per_bp,
+      y         => $composite->y - 2,
+      width     => $composite->width + 4/$pix_per_bp,
+      height    => $h + 4,
+      colour    => 'highlight2',
+      absolutey => 1,
+    }));
+  }
 }
 
 sub href {
