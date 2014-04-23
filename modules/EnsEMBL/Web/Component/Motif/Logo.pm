@@ -53,13 +53,13 @@ sub content {
   );
 
   my $image = $self->new_image($feature_slice, $image_config);
+  return if $self->_export_image($image);
 
   $image->imagemap         = 'yes';
   $image->{'panel_number'} = 'top';
   $image->set_button('drag', 'title' => 'Drag to select region');
 
   return $image->render;
-  #return "DONE!";
 }
 
 1;
