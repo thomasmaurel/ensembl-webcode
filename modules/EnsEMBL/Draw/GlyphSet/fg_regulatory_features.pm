@@ -118,7 +118,6 @@ sub tag {
   
   # Motif features
   while (my ($mf_start, $mf_end) = splice @mf_loci, 0, 2) { 
-    #warn ">>> MOTIF FEATURE $mf_start - $mf_end";
     push @result, {
       style  => 'rect',
       colour => 'black',
@@ -177,21 +176,12 @@ sub highlight {
 
   if ($mf && $config->hub->type eq 'Motif') {
     my $motif = $config->hub->database('funcgen')->get_MotifFeatureAdaptor->fetch_by_interdb_stable_id($mf);
- #   my @loci       = @{$f->get_underlying_structure};
- #   my $bound_end  = pop @loci;
- #   my $end        = pop @loci;
- #   my ($bound_start, $start, @mf_loci) = @loci;
- #   foreach (@mf_loci) {
-   # warn ">>> X ".$composite." => Y ".$composite->y;
-   # warn ">>> WIDTH ".$composite->width;
-   # warn ">>> FSTART ".$f->start;
-   # warn ">>> MSTART ".$motif->start;
-   # warn ">>> START ".($composite->x + $f->start - $motif->start - 2);
+    my $slice = $f->feature_Slice;
     $self->unshift($self->Rect({
-      x         => $composite->x + $f->start - $motif->start - 2/$pix_per_bp,
-      y         => $composite->y - 2,
-      width     => $motif->start - $motif->end + 4/$pix_per_bp,
-      height    => $h + 4,
+      x         => $composite->x + $motif->start - $slice->start - 4/$pix_per_bp,
+      y         => $composite->y - 4,
+      width     => abs($motif->start - $motif->end) + 8/$pix_per_bp,
+      height    => $h + 8,
       colour    => 'highlight2',
       absolutey => 1,
     }));
