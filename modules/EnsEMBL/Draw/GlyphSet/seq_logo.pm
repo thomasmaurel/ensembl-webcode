@@ -18,60 +18,107 @@ limitations under the License.
 
 package EnsEMBL::Draw::GlyphSet::seq_logo;
 
-### Uses premade images ("s") to draw a sequence logo
+### Uses premade images ("sprites") to draw a sequence logo
 ### See EnsEMBL::Web::ImageConfig::sequence_logo
 
 use strict;
+
+#use List::Util qw(sum);
+use POSIX qw(ceil);
 
 use base qw(EnsEMBL::Draw::GlyphSet);
 
 sub render {
   my $self = shift;
-  my $sprites = $self->matrix;
+  my ($matrix, $max_total) = $self->get_data;
   
-  my $width = 50;
-  my $pad = 0;
-  my $step = $width + $pad;
-  my $pos = 0;
+  my $width = $self->scalex;
+  my $max_height = ceil($max_total * $width);
+  warn ">>> MAX HEIGHT $max_height";
+  my $step = $width;
+  my $x = 0;
+
+  my ($font, $fontsize) = $self->get_font_details($self->my_config('font') || 'innertext');
+  my $count = 1;
   
-  foreach my (@$sprites) {
-    my ($base, $score) = @$_;
-    my $height = $width * $score;
-    $self->push($self->Sprite({
-      z             => 1000,
-      x             => $pos,
-      y             => $width,
-      sprite        => $base,
+  foreach my $column (@$matrix) {
+    ## Add up image heights, rounding up
+    my $total_height = 0;
+    foreach (values %$column) {
+      $total_height += ceil($_ * $width);
+    }
+    #warn ">>> TOTAL HEIGHT = $total_height";
+    my $y = $max_height - $total_height; #reset y coord
+    #warn "... Y = $y";
+    foreach my $base (sort {$column->{$b} <=> $column->{$a}} keys %$column) {
+      my $score = $column->{$base};
+      my $height = ceil($width * $score);
+      $y += $height;
+      #warn "@@@ HEIGHT $height, Y $y";
+      $self->push($self->Sprite({
+        x             => $x,
+        y             => $y,
+        sprite        => $base,
+        width         => $width,
+        height        => $height,
+        absolutex     => 1,
+        absolutewidth => 1,
+        absolutey     => 1,
+        alt           => $base,
+      }));
+    }  
+=pod
+    $self->push($self->Line({
+      x             => $x,
+      y             => $y + 5,
       width         => $width,
-      height        => $height,
-      absolutex     => 1,
-      absolutewidth => 1,
-      absolutey     => 1,
-      alt           => $base,
+      height        => 0,
+      colour        => 'black', 
     }));
-      
-    $pos += $step;
+    my (undef, undef, $text_width, $text_height) = $self->get_text_width(0, $count, '', font => $font, ptsize => $fontsize);
+    $self->push($self->Text({
+      x         => $x,
+      y         => ($y + 10 + $text_height),
+      width     => $step,
+      height    => $text_height,
+      textwidth => $text_width * $step,
+      font      => $font,
+      ptsize    => $fontsize,
+      halign    => 'center',
+      colour    => 'black', 
+      text      => $count,
+      absolutey => 1,
+    }));
+=cut
+    $x += $step;
   }
   
 }
 
-sub matrix {
+sub get_data {
   my $self = shift;
 
   my $adaptor = $self->{'container'}->adaptor->db->get_db_adaptor('funcgen')->get_MotifFeatureAdaptor;
   my $motif = $adaptor->fetch_by_interdb_stable_id($self->{'config'}->hub->param('mf'));
-  my $slice = $motif->feature_slice;
+  my $length = abs($motif->start - $motif->end + 1);
   my $matrix = [];
+  my $max_total = 0;
 
   ## DUMMY FEATURES FOR TESTING
   my @bases = (qw(a c g t));
-  my @scores = (qw(0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9));
   srand;
-  for ($i = 0; $i <  $slice->length; $i++) { 
-    my $base = rand(@bases);
-    my $score = rand(@scores);
-    push @$matrix, [$base, $score];
+  for (my $i = 0; $i <= $length; $i++) { 
+    my $column = {};
+    my $total = 0;
+    foreach my $base (@bases) {
+      my $score = sprintf('%.1f', rand());
+      $column->{$base} = $score;
+      $total += $score; 
+    }
+    push @$matrix, $column;
+    $max_total = $total if $total > $max_total;
   }
+  return ($matrix, $max_total);
 }
 
 1;

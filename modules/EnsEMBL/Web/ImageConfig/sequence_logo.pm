@@ -28,6 +28,7 @@ sub init {
   $self->set_parameters({
     sortable_tracks => 1, # allow the user to reorder tracks
     opt_lines       => 1, # draw registry lines
+    spritelib       => { default => $self->species_defs->ENSEMBL_WEBROOT . '/htdocs/img/sprites' },
   });
 
   $self->create_menus(qw(
@@ -50,6 +51,7 @@ sub init {
   );
  
   $self->add_tracks('sequence',
+    [ 'logo',       'Logo',            'seq_logo', { display => 'normal', strand => 'b', description => 'Track showing sequence logo', }],
     [ 'seq',       'Sequence',            'sequence', { display => 'normal', strand => 'b', description => 'Track showing reference sequence',       colourset => 'seq',      threshold => 1,   depth => 1      }],
   );
  

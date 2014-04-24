@@ -46,9 +46,9 @@ sub content {
     slice_number    => '1|1',
   });
 
-  ## Show the ruler and sequence only on the same strand as the motif
+  ## Show tracks only on the same strand as the motif
   $image_config->modify_configs(
-    [ 'ruler', 'scalebar', 'seq' ],
+    [ 'ruler', 'scalebar', 'seq', 'logo' ],
     { 'strand', $motif->strand > 0 ? 'f' : 'r' }
   );
 
