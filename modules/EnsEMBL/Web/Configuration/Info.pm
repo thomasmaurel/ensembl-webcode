@@ -85,6 +85,16 @@ sub populate_tree {
     ));
   }
 
+  $self->create_node('VariationGallery', 'Explore variation views',
+    [qw(
+      rnaseq_table  EnsEMBL::Web::Component::Info::VariationGallery
+    )],
+    { 'availability' => 'database:variation' }
+  );
+  $self->create_subnode('CheckGallery', '', [],
+    { command => 'EnsEMBL::Web::Command::Info::CheckGallery', no_menu_entry => 1 }
+  );
+
   $self->create_node('Expression', 'Gene Expression',
     [qw(
       rnaseq_table  EnsEMBL::Web::Component::Info::ExpressionTable
