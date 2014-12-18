@@ -30,27 +30,23 @@ use parent qw(EnsEMBL::Web::Command);
 sub process {
   my $self               = shift;
   my $hub                = $self->hub;
+  my $species            = $hub->param('species');
 
   my $data_type = $hub->param('data_type');
   my $url_params = {
-                    'species' => $hub->param('species'),
+                    'species' => $species,
                     'type'    => 'Info',
                     'action'  => $data_type.'Gallery',
                   };
 
   ## Check validity of identifier
   my $id = $hub->param('identifier');
+
   my $error;
 
-  if ($data_type eq 'Variation') {
-    $url_params->{'v'} = $id;
-  }
-  elsif ($data_type eq 'Gene') {
-    $url_params->{'g'} = $id;
-  }
-  elsif ($data_type eq 'Location') {
-    $url_params->{'r'} = $id;
-  }
+  ## TODO Validate user input
+  #if ($id) {
+  #}
  
   if ($error) {
     my $species = $hub->species_defs->get_config($hub->param('species'), 'SPECIES_COMMON_NAME');
@@ -63,6 +59,21 @@ sub process {
     $self->ajax_redirect('/site_gallery.html');
   }
   else { 
+    ## Use default for this species if user didn't supply one
+    unless ($id) {
+      my $sample_data = { %{$hub->species_defs->get_config($species, 'SAMPLE_DATA') || {}} };
+      $id = $sample_data->{uc($data_type).'_PARAM'};
+    }
+
+    if ($data_type eq 'Variation') {
+      $url_params->{'v'} = $id;
+    }
+    elsif ($data_type eq 'Gene') {
+      $url_params->{'g'} = $id;
+    }
+    elsif ($data_type eq 'Location') {
+      $url_params->{'r'} = $id;
+    }
     $self->ajax_redirect($hub->url($url_params));
   }
 }
