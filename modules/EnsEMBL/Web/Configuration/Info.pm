@@ -85,11 +85,17 @@ sub populate_tree {
     ));
   }
 
+  $self->create_node('GeneGallery', 'Explore gene views',
+    [qw(gene_gallery EnsEMBL::Web::Component::Info::GeneGallery)],
+    { 'availability' => 1 }
+  );
   $self->create_node('VariationGallery', 'Explore variation views',
-    [qw(
-      rnaseq_table  EnsEMBL::Web::Component::Info::VariationGallery
-    )],
+    [qw(var_gallery EnsEMBL::Web::Component::Info::VariationGallery)],
     { 'availability' => 'database:variation' }
+  );
+  $self->create_node('LocationGallery', 'Explore location views',
+    [qw(loc_gallery EnsEMBL::Web::Component::Info::LocationGallery)],
+    { 'availability' => 1 }
   );
   $self->create_subnode('CheckGallery', '', [],
     { command => 'EnsEMBL::Web::Command::Info::CheckGallery', no_menu_entry => 1 }
