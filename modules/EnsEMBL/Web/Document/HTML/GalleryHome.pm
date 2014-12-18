@@ -63,21 +63,22 @@ sub render {
                         });
 
   my $data_types = [
-                    {'value' => 'Gene',       'caption' => 'Gene name (e.g. FOXP2)'},
-                    {'value' => 'Variation',  'caption' => 'Variant ID (e.g. rs1234)'},
-                    {'value' => 'Location',   'caption' => 'Genomic location (e.g. X:1000-2000)'},
+                    {'value' => 'Gene',       'caption' => 'Genes'},
+                    {'value' => 'Variation',  'caption' => 'Variants'},
+                    {'value' => 'Location',   'caption' => 'Genomic locations'},
                     ];
  
   $fieldset->add_field({
                         'type'    => 'Radiolist',
                         'name'    => 'data_type',
-                        'label'   => 'Data type',
+                        'label'   => 'I am interested in',
                         'values'  => $data_types,
+                        'value'   => 'Variation',
                         });
   $fieldset->add_field({
                         'type'    => 'String',
                         'name'    => 'identifier',
-                        'label'   => 'Identifier',
+                        'label'   => 'Identifier (optional)',
                         });
   $fieldset->add_button({
     'name'      => 'submit',
