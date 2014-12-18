@@ -70,7 +70,7 @@ sub content {
                   
                   );
 
-  return $self->format_gallery(@previews);
+  return $self->format_gallery('Variation', @previews);
 }
 
 1;
