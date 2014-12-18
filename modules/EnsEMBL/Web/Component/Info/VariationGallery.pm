@@ -38,6 +38,14 @@ sub content {
   ## Define set of pages
   my $location_pages = [
                           {
+                            'url'     => $hub->url({'type'    => 'Location',
+                                                    'action'  => 'View',
+                                                     'v'      => $v,
+                                                    }),
+                            'img'     => '',
+                            'caption' => 'Region where this variant is located',
+                          },
+                          {
                             'url'     => $hub->url({'type'    => 'Variation',
                                                      'action' => 'Context',
                                                      'v'      => $v,
@@ -47,16 +55,19 @@ sub content {
                           },
                           {
                             'url'     => $hub->url({'type'    => 'Variation',
+                                                    'action'  => 'Sequence',
+                                                     'v'      => $v,
+                                                    }),
+                            'img'     => 'variation_sequence',
+                            'caption' => 'Flanking sequence for this variant',
+                          },
+                          {
+                            'url'     => $hub->url({'type'    => 'Variation',
                                                     'action'  => 'Compara_Alignments',
                                                      'v'      => $v,
                                                     }),
                             'img'     => 'variation_phylogenetic',
                             'caption' => 'Phylogenetic context of this variant',
-                          },
-                          {
-                            'url'     => '',
-                            'img'     => '',
-                            'caption' => '',
                           },
                         ];
 
