@@ -22,7 +22,7 @@ package EnsEMBL::Web::Component::Info::VariationGallery;
 
 use strict;
 
-use base qw(EnsEMBL::Web::Component);
+use base qw(EnsEMBL::Web::Component::Info);
 
 sub _init {
   my $self = shift;
@@ -33,7 +33,6 @@ sub _init {
 sub content {
   my $self = shift;
   my $hub  = $self->hub;
-  my ($html, @toc);
   my $v = $hub->param('v');
 
   ## Define set of pages
@@ -71,31 +70,7 @@ sub content {
                   
                   );
 
-
-  foreach my $group (@previews) {
-    my @pages = @{$group->{'pages'}||[]};
-    #next unless scalar @pages;
-
-    my $title = $group->{'title'};
-    push @toc, sprintf('<a href="#%s">%s</a>', lc($title), $title);
-    $html .= sprintf('<h2 id="%s">%s</h2>', lc($title), $title);
-
-    $html .= '<div class="gallery">';
-
-    foreach my $page (@pages) {
-      $html .= '<div class="gallery_preview">';
-
-      $html .= sprintf('<a href="%s"><img src="/i/gallery/%s.png" /></a><br /><div class="preview_caption"><a href="%s" class="nodeco">%s</a></div>', $page->{'url'}, $page->{'img'}, $page->{'url'}, $page->{'caption'});
-
-      $html .= '</div>';
-    }
-
-
-    $html .= '</div>';
-  }
-
-  my $toc_string = sprintf('<p class="center">%s</p>', join(' | ', @toc));
-  return $toc_string.$html;
+  return $self->format_gallery(@previews);
 }
 
 1;
