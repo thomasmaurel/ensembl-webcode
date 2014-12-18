@@ -46,6 +46,7 @@ sub process {
 
   ## TODO Validate user input
   #if ($id) {
+  #  $error = sprintf('%s %s could not be found in species %s. Please try again.', $data_type, $id, $species);
   #}
  
   if ($error) {
@@ -54,7 +55,7 @@ sub process {
                             'type'      => 'message',
                             'code'      => 'gallery',
                             'function'  => '_warning',
-                            'message'   => sprintf('%s %s could not be found in species %s. Please try again.', $data_type, $id, $species),
+                            'message'   => $error,
                             );  
     $self->ajax_redirect('/site_gallery.html');
   }
