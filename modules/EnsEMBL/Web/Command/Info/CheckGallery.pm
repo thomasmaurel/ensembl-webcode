@@ -32,7 +32,7 @@ sub process {
   my $hub                = $self->hub;
   my $species            = $hub->param('species');
 
-  my $data_type = $hub->param('data_type');
+  my $data_type = $hub->param('data_type_var') || $hub->param('data_type_novar');
   my $url_params = {
                     'species' => $species,
                     'type'    => 'Info',

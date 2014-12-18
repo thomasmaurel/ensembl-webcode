@@ -45,12 +45,18 @@ sub render {
     $hub->session->purge_data(type => 'message', code => 'gallery');
   }
 
+  $html .= '<div class="js_panel" id="site-gallery-home">
+      <input type="hidden" class="panel_type" value="Content">';
+
   my $form      = EnsEMBL::Web::Form->new({'id' => 'gallery_home', 'action' => '/Info/CheckGallery', 'name' => 'gallery_home'});
   my $fieldset  = $form->add_fieldset({});
 
   my @array;
   foreach ($species_defs->valid_species) {
-    push @array, {'value' => $_, 'caption' => $species_defs->get_config($_, 'SPECIES_COMMON_NAME')};
+    my $class = $hub->species_defs->get_config($_, 'databases')->{'DATABASE_VARIATION'} 
+                  ? ['_stt', '_stt__var'] : ['_stt', '_stt__novar'];
+    push @array, {'value' => $_, 'class' => $class,
+                  'caption' => $species_defs->get_config($_, 'SPECIES_COMMON_NAME')};
   }
   my @species     = sort {$a->{'caption'} cmp $b->{'caption'}} @array;
   my $favourites  = $hub->get_favourite_species;
@@ -58,28 +64,42 @@ sub render {
                         'type'    => 'Dropdown',
                         'name'    => 'species',
                         'label'   => 'Species',
+                        'class'   => '_stt',
                         'values'  => \@species,
                         'value'   => $favourites->[0],
                         });
 
+  ## Two radiolists, with and without variants
+  my $params = {
+                'type'        => 'Radiolist',
+                'label'       => 'I am interested in',
+                'name'        => 'data_type_novar',
+                'field_class' => '_stt__novar',
+                };
+
   my $data_types = [
                     {'value' => 'Gene',       'caption' => 'Genes'},
-                    {'value' => 'Variation',  'caption' => 'Variants'},
                     {'value' => 'Location',   'caption' => 'Genomic locations'},
                     ];
- 
-  $fieldset->add_field({
-                        'type'    => 'Radiolist',
-                        'name'    => 'data_type',
-                        'label'   => 'I am interested in',
-                        'values'  => $data_types,
-                        'value'   => 'Variation',
-                        });
+
+  $params->{'values'} = $data_types;
+  $params->{'value'}  = 'Gene';
+  $fieldset->add_field($params);
+
+  push @$data_types, {'value' => 'Variation',  'caption' => 'Variants'};
+
+  $params->{'name'}         = 'data_type_var';
+  $params->{'field_class'}  = '_stt__var';
+  $params->{'values'}       = $data_types;
+  $params->{'value'}        = 'Variation';
+  $fieldset->add_field($params);
+
   $fieldset->add_field({
                         'type'    => 'String',
                         'name'    => 'identifier',
                         'label'   => 'Identifier (optional)',
                         });
+
   $fieldset->add_button({
     'name'      => 'submit',
     'value'     => 'Go',
@@ -87,6 +107,8 @@ sub render {
   });
 
   $html .= $form->render;
+
+  $html .= '</div>';
 
   return $html; 
 }
