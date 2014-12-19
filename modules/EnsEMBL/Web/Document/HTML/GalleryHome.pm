@@ -53,8 +53,9 @@ sub render {
 
   my @array;
   foreach ($species_defs->valid_species) {
-    my $class = $hub->species_defs->get_config($_, 'databases')->{'DATABASE_VARIATION'} 
-                  ? ['_stt', '_stt__var'] : ['_stt', '_stt__novar'];
+    my $class = ['_stt'];
+    push @$class, $hub->species_defs->get_config($_, 'databases')->{'DATABASE_VARIATION'} 
+                  ? '_stt__var' : '_stt__novar';
     push @array, {'value' => $_, 'class' => $class,
                   'caption' => $species_defs->get_config($_, 'SPECIES_COMMON_NAME')};
   }
@@ -70,29 +71,30 @@ sub render {
                         });
 
   ## Two radiolists, with and without variants
-  my $params = {
-                'type'        => 'Radiolist',
-                'label'       => 'I am interested in',
-                'name'        => 'data_type_novar',
-                'field_class' => '_stt__novar',
-                };
 
   my $data_types = [
                     {'value' => 'Gene',       'caption' => 'Genes'},
                     {'value' => 'Location',   'caption' => 'Genomic locations'},
                     ];
 
-  $params->{'values'} = $data_types;
-  $params->{'value'}  = 'Gene';
-  $fieldset->add_field($params);
+  my %params = (
+                'type'        => 'Radiolist',
+                'label'       => 'I am interested in',
+                'name'        => 'data_type_novar',
+                'field_class' => '_stt_novar',
+                'values'      => $data_types,
+                'value'       => 'Gene',
+                );
+  $fieldset->add_field(\%params);
 
   push @$data_types, {'value' => 'Variation',  'caption' => 'Variants'};
 
-  $params->{'name'}         = 'data_type_var';
-  $params->{'field_class'}  = '_stt__var';
-  $params->{'values'}       = $data_types;
-  $params->{'value'}        = 'Variation';
-  $fieldset->add_field($params);
+  my %var_params = %params;
+  $var_params{'name'}         = 'data_type_var';
+  $var_params{'field_class'}  = '_stt_var';
+  $var_params{'values'}       = $data_types;
+  $var_params{'value'}        = 'Variation';
+  $fieldset->add_field(\%var_params);
 
   $fieldset->add_field({
                         'type'    => 'String',
