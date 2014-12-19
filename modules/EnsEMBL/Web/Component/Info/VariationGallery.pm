@@ -32,56 +32,104 @@ sub _init {
 
 sub content {
   my $self = shift;
-  my $hub  = $self->hub;
+
+  ## Define page layout 
+  ## Note: We structure it like this, because for improved findability, pages can appear 
+  ## under more than one heading. Configurations for individual views are defined in a
+  ## separate method, lower down this module
+  my $layout = [
+                  {
+                    'title' => 'Locations',                      
+                    'pages' => ['Region in Detail', 'Genomic Context', 'Flanking Sequence', 'Phylogenetic Context'],
+                  },
+                  {
+                    'title' => 'Genes',
+                    'pages' => ['Gene Sequence', 'Gene Table', 'Gene Image', 'Gene Regulation', 'Citations'],
+                  },
+                  {
+                    'title' => 'Transcripts',
+                    'pages' => ['Transcript Image', 'Transcript Table', 'Transcript Comparison', 'Exons', 'Gene Regulation', 'Citations'],
+                  },
+                  {
+                    'title' => 'Proteins',
+                    'pages' => ['Protein Summary', 'cDNA Sequence', 'Protein Sequence', 'Variation Protein', 'Citations'],
+                  },
+                  {
+                    'title' => 'Phenotypes',
+                    'pages' => ['Phenotype Table', 'Gene Phenotype', 'Phenotype Karyotype', 'Phenotype Location Table', 'Citations'],
+                  },
+                  {
+                    'title' => 'Populations &amp; Individuals',
+                    'pages' => ['Population Image', 'Population Table', 'Genotypes Table', 'Linkage Image', 'LD Table', 'Resequencing', 'Citations'],
+                  },
+                ];
+
+  return $self->format_gallery('Variation', $layout, $self->_get_pages);
+}
+
+sub _get_pages {
+  ## Define these in a separate method to make content method cleaner
+  my $self = shift;
+  my $hub = $self->hub;
   my $v = $hub->param('v');
 
-  ## Define set of pages
-  my $location_pages = [
-                          {
-                            'url'     => $hub->url({'type'    => 'Location',
-                                                    'action'  => 'View',
-                                                     'v'      => $v,
-                                                    }),
-                            'img'     => '',
-                            'caption' => 'Region where this variant is located',
+  return {'Region in Detail' => {
+                                  'url'     => $hub->url({'type'    => 'Location',
+                                                              'action'  => 'View',
+                                                              'v'      => $v,
+                                                              }),
+                                  'img'     => '',
+                                  'caption' => 'Region where this variant is located',
+                                },
+          'Genomic Context' => {
+                                  'url'     => $hub->url({'type'    => 'Variation',
+                                                          'action' => 'Context',
+                                                          'v'      => $v,
+                                                        }),
+                                  'img'     => 'variation_genomic',
+                                  'caption' => 'Genomic context of this variant',
+                                },
+          'Flanking Sequence' => {
+                                  'url'     => $hub->url({'type'    => 'Variation',
+                                                          'action'  => 'Sequence',
+                                                          'v'      => $v,
+                                                          }),
+                                  'img'     => 'variation_sequence',
+                                  'caption' => 'Flanking sequence for this variant',
+                                  },
+          'Phylogenetic Context' => {
+                                  'url'     => $hub->url({'type'    => 'Variation',
+                                                          'action'  => 'Compara_Alignments',
+                                                          'v'      => $v,
+                                                          }),
+                                  'img'     => 'variation_phylogenetic',
+                                  'caption' => 'Phylogenetic context of this variant',
+                                  },
+          'Gene Sequence' => {
+                                  'url'     => $hub->url({'type'    => 'Gene',
+                                                          'action'  => 'Sequence',
+                                                          'v'      => $v,
+                                                          }),
+                                  'img'     => '',
+                                  'caption' => 'Sequence of the gene overlapping this variant',
+                            },
+          'Gene Image' => {
+                                  'url'     => $hub->url({'type'    => 'Gene',
+                                                          'action'  => 'Variation_Gene/Image',
+                                                          'v'      => $v,
+                                                          }),
+                                  'img'     => '',
+                                  'caption' => 'Image showing all variants within the same gene as this one',
                           },
-                          {
-                            'url'     => $hub->url({'type'    => 'Variation',
-                                                     'action' => 'Context',
-                                                     'v'      => $v,
-                                                    }),
-                            'img'     => 'variation_genomic',
-                            'caption' => 'Genomic context of this variant',
+          'Gene Table' => {
+                                  'url'     => $hub->url({'type'    => 'Gene',
+                                                          'action'  => 'Variation_Gene/Table',
+                                                          'v'      => $v,
+                                                        }),
+                                  'img'     => '',
+                                  'caption' => 'Table of variants within the same gene as this one',
                           },
-                          {
-                            'url'     => $hub->url({'type'    => 'Variation',
-                                                    'action'  => 'Sequence',
-                                                     'v'      => $v,
-                                                    }),
-                            'img'     => 'variation_sequence',
-                            'caption' => 'Flanking sequence for this variant',
-                          },
-                          {
-                            'url'     => $hub->url({'type'    => 'Variation',
-                                                    'action'  => 'Compara_Alignments',
-                                                     'v'      => $v,
-                                                    }),
-                            'img'     => 'variation_phylogenetic',
-                            'caption' => 'Phylogenetic context of this variant',
-                          },
-                        ];
-
-  ## Create groups for processing
-  my @previews = (
-                  {'title' => 'Locations',                      'pages' => $location_pages},
-                  {'title' => 'Genes',                          'pages' => []},
-                  {'title' => 'Transcripts',                    'pages' => []},
-                  {'title' => 'Phenotypes',                     'pages' => []},
-                  {'title' => 'Populations &amp; Individuals',  'pages' => []},
-                  
-                  );
-
-  return $self->format_gallery('Variation', @previews);
+    };
 }
 
 1;

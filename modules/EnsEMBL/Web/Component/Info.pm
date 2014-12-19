@@ -29,10 +29,10 @@ our $data_type = {
                   };
 
 sub format_gallery {
-  my ($self, $type, @previews) = @_;
+  my ($self, $type, $layout, $all_pages) = @_;
   my ($html, @toc);
 
-  foreach my $group (@previews) {
+  foreach my $group (@$layout) {
     my @pages = @{$group->{'pages'}||[]};
     #next unless scalar @pages;
 
@@ -42,7 +42,10 @@ sub format_gallery {
 
     $html .= '<div class="gallery">';
 
-    foreach my $page (@pages) {
+    foreach (@pages) {
+      my $page = $all_pages->{$_};
+      next unless $page;
+
       $html .= '<div class="gallery_preview">';
 
       $html .= sprintf('<div class="preview_caption"><a href="%s" class="nodeco">%s</a></div><br />', $page->{'url'}, $page->{'caption'});
