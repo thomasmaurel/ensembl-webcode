@@ -48,14 +48,17 @@ sub format_gallery {
 
       $html .= '<div class="gallery_preview">';
 
-      ## Disable views that are invalid for this feature
       if ($page->{'disabled'}) {
-
+        ## Disable views that are invalid for this feature
         $html .= sprintf('<div class="preview_caption">%s<br />[Not available for this %s]</div><br />', $page->{'caption'}, lc($type));
         $html .= sprintf('<img src="/i/gallery/%s.png" class="disabled" /></a>', $page->{'img'});
       }
+      elsif ($page->{'multi'}) {
+        ## Disable links on views that can't be mapped to a single feature/location
+        $html .= sprintf('<div class="preview_caption">%s<br />N.B. Maps to multiple %s</div><br />', $page->{'caption'}, lc($type).'s');
+        $html .= sprintf('<img src="/i/gallery/%s.png" /></a>', $page->{'img'});
+      }
       else {
-  
         $html .= sprintf('<div class="preview_caption"><a href="%s" class="nodeco">%s</a></div><br />', $page->{'url'}, $page->{'caption'});
 
         $html .= sprintf('<a href="%s"><img src="/i/gallery/%s.png" /></a>', $page->{'url'}, $page->{'img'});
@@ -63,14 +66,30 @@ sub format_gallery {
 
       my $form = $self->new_form({'action' => $page->{'url'}, 'method' => 'post'});
 
-      my $data_param = $data_type->{$type}{'param'};
-      my $field = $form->add_field({
-                      'type'  => 'String',
-                      'size'  => 10,
-                      'name'  => $data_param,
-                      'label' => $data_type->{$type}{'label'},
-                      'value' => $self->hub->param($data_param),
-                      });
+      my ($field, $data_param);
+
+      if ($page->{'multi'}) {
+        $data_param = $page->{'multi'}{'param'};
+        $type       = $page->{'multi'}{'type'};
+        $field      = $form->add_field({
+                                        'type'    => 'Dropdown',
+                                        'name'    => $data_param,
+                                        'label'   => $data_type->{$type}{'label'},
+                                        'values'  => $page->{'multi'}{'values'},
+                                        'value'   => $self->hub->param($data_param),
+                                        });
+      }
+      else {
+        $data_param = $data_type->{$type}{'param'};
+        $field      = $form->add_field({
+                                        'type'  => 'String',
+                                        'size'  => 10,
+                                        'name'  => $data_param,
+                                        'label' => $data_type->{$type}{'label'},
+                                        'value' => $self->hub->param($data_param),
+                                        });
+      }
+
       $field->add_element({'type' => 'submit', 'value' => 'Go'}, 1);
 
       $html .= '<div style="width:300px">'.$form->render.'</div>';
