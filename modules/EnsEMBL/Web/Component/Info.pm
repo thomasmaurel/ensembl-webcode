@@ -48,9 +48,18 @@ sub format_gallery {
 
       $html .= '<div class="gallery_preview">';
 
-      $html .= sprintf('<div class="preview_caption"><a href="%s" class="nodeco">%s</a></div><br />', $page->{'url'}, $page->{'caption'});
+      ## Disable views that are invalid for this feature
+      if ($page->{'disabled'}) {
 
-      $html .= sprintf('<a href="%s"><img src="/i/gallery/%s.png" /></a>', $page->{'url'}, $page->{'img'});
+        $html .= sprintf('<div class="preview_caption">%s<br />[Not available for this %s]</div><br />', $page->{'caption'}, lc($type));
+        $html .= sprintf('<img src="/i/gallery/%s.png" class="disabled" /></a>', $page->{'img'});
+      }
+      else {
+  
+        $html .= sprintf('<div class="preview_caption"><a href="%s" class="nodeco">%s</a></div><br />', $page->{'url'}, $page->{'caption'});
+
+        $html .= sprintf('<a href="%s"><img src="/i/gallery/%s.png" /></a>', $page->{'url'}, $page->{'img'});
+      }
 
       my $form = $self->new_form({'action' => $page->{'url'}, 'method' => 'post'});
 
@@ -68,7 +77,6 @@ sub format_gallery {
 
       $html .= '</div>';
     }
-
 
     $html .= '</div>';
   }
