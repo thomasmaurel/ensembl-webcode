@@ -73,13 +73,36 @@ sub _get_pages {
   my $hub = $self->hub;
   my $v = $hub->param('v');
 
+  ## Check availabity of views for this variant
+  my ($no_location, $multi_location) = (0, 0);
+
+  my $object    = $hub->core_object('Variation');
+
+  my %mappings = %{$object->variation_feature_mapping};
+  if (scalar keys %mappings == 0) {
+    $no_location = 1;
+  }
+  elsif (scalar keys %mappings > 1) {
+    my $multi_location = {
+                          'type'    => 'Location',
+                          'param'   => 'r',
+                          'values'  => [],
+                          };
+    foreach (sort { $mappings{$a}{'Chr'} cmp $mappings{$b}{'Chr'} || $mappings{$a}{'start'} <=> $mappings{$b}{'start'}} keys %mappings) {
+      my $coords = sprintf('%s:%s-%s', $mappings{$_}{'Chr'}, $mappings{$_}{'start'}, $mappings{$_}{'end'});
+      push @{$multi_location->{'values'}}, {'value' => $coords, 'caption' => $coords};
+    }
+  }
+
   return {'Region in Detail' => {
-                                  'url'     => $hub->url({'type'    => 'Location',
-                                                              'action'  => 'View',
-                                                              'v'      => $v,
-                                                              }),
-                                  'img'     => '',
-                                  'caption' => 'Region where this variant is located',
+                                  'url'       => $hub->url({'type'    => 'Location',
+                                                          'action'  => 'View',
+                                                          'v'      => $v,
+                                                          }),
+                                  'img'       => 'variation_location',
+                                  'caption'   => 'Region where this variant is located',
+                                  'multi'     => $multi_location,  
+                                  'disabled'  => $no_location,  
                                 },
           'Genomic Context' => {
                                   'url'     => $hub->url({'type'    => 'Variation',
@@ -266,12 +289,14 @@ sub _get_pages {
                                   'caption' => '',
                                 },
           'LD Image' => {
-                                  'url'     => $hub->url({'type'    => 'Location',
+                                  'url'       => $hub->url({'type'    => 'Location',
                                                           'action'  => 'LD',
                                                           'v'      => $v,
                                                         }),
-                                  'img'     => 'variation_ldview',
-                                  'caption' => '',
+                                  'img'       => 'variation_ldview',
+                                  'caption'   => '',
+                                  'multi'     => $multi_location,  
+                                  'disabled'  => $no_location,  
                                 },
           'LD Table' => {
                                   'url'     => $hub->url({'type'    => 'Variation',
@@ -282,12 +307,14 @@ sub _get_pages {
                                   'caption' => '',
                                 },
           'Resequencing' => {
-                                  'url'     => $hub->url({'type'    => 'Location',
+                                  'url'       => $hub->url({'type'    => 'Location',
                                                           'action'  => 'SequenceAlignment',
                                                           'v'      => $v,
                                                         }),
-                                  'img'     => 'variation_resequencing',
-                                  'caption' => '',
+                                  'img'       => 'variation_resequencing',
+                                  'caption'   => '',
+                                  'multi'     => $multi_location,  
+                                  'disabled'  => $no_location,  
                                 },
     };
 }
