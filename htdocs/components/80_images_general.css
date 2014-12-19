@@ -25,6 +25,9 @@ img.float-right { float:right; margin: 0 0 16px 16px; padding: 0; }
 img.screenshot,  
 div.screenshot  { display:block; margin:16px auto; }
 
+
+img.disabled { opacity: 0.3; filter: alpha(opacity=30); }
+
 /* Equivalents for imported WordPress feed */
 img.alignleft { float:left;  margin-right: 10px; }
 img.alignright { float:right;  margin-left: 10px; }
