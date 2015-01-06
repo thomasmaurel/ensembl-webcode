@@ -44,10 +44,13 @@ sub process {
 
   my $error;
 
-  ## TODO Validate user input
-  #if ($id) {
-  #  $error = sprintf('%s %s could not be found in species %s. Please try again.', $data_type, $id, $species);
-  #}
+  if ($id) {
+    my $object = $hub->core_object(lc($data_type));
+    my $common_name = $hub->species_defs->get_config($species, 'SPECIES_COMMON_NAME');
+    unless ($object) {
+      $error = sprintf('%s %s could not be found in species %s. Please try again.', $data_type, $id, $common_name);
+    }
+  }
  
   if ($error) {
     my $species = $hub->species_defs->get_config($hub->param('species'), 'SPECIES_COMMON_NAME');
@@ -57,11 +60,12 @@ sub process {
                             'function'  => '_warning',
                             'message'   => $error,
                             );  
-    $self->ajax_redirect('/site_gallery.html');
+    $self->ajax_redirect('/gallery.html');
   }
   else { 
     ## Use default for this species if user didn't supply one
     unless ($id) {
+      $url_params->{'default'} = 'yes';
       my $sample_data = { %{$hub->species_defs->get_config($species, 'SAMPLE_DATA') || {}} };
       $id = $sample_data->{uc($data_type).'_PARAM'};
     }
