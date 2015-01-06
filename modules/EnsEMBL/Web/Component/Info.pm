@@ -32,6 +32,8 @@ sub format_gallery {
   my ($self, $type, $layout, $all_pages) = @_;
   my ($html, @toc);
 
+  return unless $all_pages;
+
   foreach my $group (@$layout) {
     my @pages = @{$group->{'pages'}||[]};
     #next unless scalar @pages;

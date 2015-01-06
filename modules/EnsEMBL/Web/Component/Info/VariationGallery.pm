@@ -64,7 +64,15 @@ sub content {
                   },
                 ];
 
-  return $self->format_gallery('Variation', $layout, $self->_get_pages);
+  my $pages = $self->_get_pages;
+
+  if (ref($pages) eq 'HASH') {
+    return $self->format_gallery('Variation', $layout, $pages);
+  }
+  else {
+    return $pages; ## error message
+  }
+
 }
 
 sub _get_pages {
@@ -76,25 +84,29 @@ sub _get_pages {
   ## Check availabity of views for this variant
   my ($no_location, $multi_location) = (0, 0);
 
-  my $object    = $hub->core_object('Variation');
+  my $object    = $hub->core_object('variation');
 
-  my %mappings = %{$object->variation_feature_mapping};
-  if (scalar keys %mappings == 0) {
-    $no_location = 1;
+  if (!$object) {
+    return $self->warning_panel('Invalid identifier', 'Sorry, that identifier could not be found. Please try again.');
   }
-  elsif (scalar keys %mappings > 1) {
-    my $multi_location = {
+  else {
+    my %mappings = %{$object->variation_feature_mapping};
+    if (scalar keys %mappings == 0) {
+      $no_location = 1;
+    }
+    elsif (scalar keys %mappings > 1) {
+      my $multi_location = {
                           'type'    => 'Location',
                           'param'   => 'r',
                           'values'  => [],
                           };
-    foreach (sort { $mappings{$a}{'Chr'} cmp $mappings{$b}{'Chr'} || $mappings{$a}{'start'} <=> $mappings{$b}{'start'}} keys %mappings) {
-      my $coords = sprintf('%s:%s-%s', $mappings{$_}{'Chr'}, $mappings{$_}{'start'}, $mappings{$_}{'end'});
-      push @{$multi_location->{'values'}}, {'value' => $coords, 'caption' => $coords};
+      foreach (sort { $mappings{$a}{'Chr'} cmp $mappings{$b}{'Chr'} || $mappings{$a}{'start'} <=> $mappings{$b}{'start'}} keys %mappings) {
+        my $coords = sprintf('%s:%s-%s', $mappings{$_}{'Chr'}, $mappings{$_}{'start'}, $mappings{$_}{'end'});
+        push @{$multi_location->{'values'}}, {'value' => $coords, 'caption' => $coords};
+      }
     }
-  }
 
-  return {'Region in Detail' => {
+    return {'Region in Detail' => {
                                   'url'       => $hub->url({'type'    => 'Location',
                                                           'action'  => 'View',
                                                           'v'      => $v,
@@ -317,6 +329,7 @@ sub _get_pages {
                                   'disabled'  => $no_location,  
                                 },
     };
+  }
 }
 
 1;
