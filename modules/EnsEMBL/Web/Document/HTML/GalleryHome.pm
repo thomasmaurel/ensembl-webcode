@@ -46,9 +46,9 @@ sub render {
   }
 
   $html .= '<div class="js_panel" id="site-gallery-home">
-      <input type="hidden" class="panel_type" value="Content">';
+      <input type="hidden" class="panel_type" value="FormSubmission">';
 
-  my $form      = EnsEMBL::Web::Form->new({'id' => 'gallery_home', 'action' => '/Info/CheckGallery', 'name' => 'gallery_home'});
+  my $form      = EnsEMBL::Web::Form->new({'id' => 'gallery_home', 'action' => '/Info/CheckGallery', 'class' => 'add_species_on_submit', 'name' => 'gallery_home'});
   my $fieldset  = $form->add_fieldset({});
 
   my @array;
