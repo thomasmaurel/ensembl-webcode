@@ -11,6 +11,9 @@ use HTTP::Tiny;
 use LWP::UserAgent;
 
 sub chase_redirects {
+######## DEPRECATED ################
+warn "DEPRECATED METHOD 'chase_redirects' - please switch to using EnsEMBL::Web::File::Utils::URL::chase_redirects. This module will be removed in release 80.";
+####################################
   my ($self, $url, $max_follow) = @_;
 
   $max_follow = 10 unless defined $max_follow;
@@ -28,10 +31,11 @@ sub chase_redirects {
     my %args = (
               'timeout'       => 10,
               'max_redirect'  => $max_follow,
-              'http_proxy'    => $self->{'hub'}->species_defs->ENSEMBL_WWW_PROXY,
-              'https_proxy'   => $self->{'hub'}->species_defs->ENSEMBL_WWW_PROXY,
               );
-
+    if ($self->{'hub'}->species_defs->ENSEMBL_WWW_PROXY) {
+      $args{'http_proxy'}   = $self->{'hub'}->species_defs->ENSEMBL_WWW_PROXY;
+      $args{'https_proxy'}  = $self->{'hub'}->species_defs->ENSEMBL_WWW_PROXY;
+    }
     my $http = HTTP::Tiny->new(%args);
 
     my $response = $http->request('HEAD', $url);

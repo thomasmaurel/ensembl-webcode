@@ -16,7 +16,7 @@ limitations under the License.
 
 =cut
 
-package EnsEMBL::Web::Tools::RandomString;
+package EnsEMBL::Web::Utils::RandomString;
 
 use strict;
 use Time::HiRes qw(gettimeofday);

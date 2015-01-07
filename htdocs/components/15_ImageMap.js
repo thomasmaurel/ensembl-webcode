@@ -59,8 +59,9 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     
     this.elLk.container     = $('.image_container',   this.el);
     this.elLk.drag          = $('.drag_select',       this.elLk.container);
-    this.elLk.map           = $('map',                this.elLk.container);
-    this.elLk.areas         = $('area',               this.elLk.map);
+    this.elLk.map           = $('.json_imagemap',     this.elLk.container);
+    var data                = this.loadJSON(this.elLk.map.html());
+    this.elLk.areas         = data.out;
     this.elLk.exportMenu    = $('.iexport_menu',      this.elLk.container).appendTo('body').css('left', this.el.offset().left);
     this.elLk.resizeMenu    = $('.image_resize_menu', this.elLk.container).appendTo('body').css('left', this.el.offset().left);
     this.elLk.img           = $('img.imagemap',       this.elLk.container);
@@ -70,12 +71,14 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     this.elLk.popupLinks    = $('a.popup',            this.elLk.toolbars);
 
     this.vertical = this.elLk.img.hasClass('vertical');
-    this.multi    = this.elLk.areas.hasClass('multi');
-    this.align    = this.elLk.areas.hasClass('align');
+    if(data.flags) {
+      this.multi    = data.flags.multi;
+      this.align    = data.flags.align;
+    }
     
     this.makeImageMap();
     this.makeHoverLabels();
-    this.initImageButtons()
+    this.initImageButtons();
     
     if (!this.vertical) {
       this.makeResizable();
@@ -124,6 +127,28 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       
       return false;
     });
+  },
+
+  loadJSON: function(str) {
+    // this will be more complex when compression is used
+    if(!str) { return []; }
+    raw = $.parseJSON(str);
+    out = [];
+    flags = {};
+    $.each(raw,function(i,val) {
+      data = { shape: val[0], coords: val[1], attrs: val[2] };
+      klass = {};
+      if(data.attrs.klass) {
+        $.each(data.attrs.klass,function(i,x) {
+          klass[x] = 1;
+          flags[x] = 1;
+        });
+      }
+      data.klass = klass;
+      out.push(data);
+    });
+
+    return { out: out, flags: flags };
   },
 
   initImageButtons: function() {
@@ -201,21 +226,21 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     var rect      = [ 'l', 't', 'r', 'b' ];
     var speciesNumber, c, r, start, end, scale;
     
-    this.elLk.areas.each(function () {
+    $.each(this.elLk.areas,function () {
       c = { a: this };
       
       if (this.shape && this.shape.toLowerCase() !== 'rect') {
         c.c = [];
-        $.each(this.coords.split(/[ ,]/), function () { c.c.push(parseInt(this, 10)); });
+        $.each(this.coords, function () { c.c.push(parseInt(this, 10)); });
       } else {
-        $.each(this.coords.split(/[ ,]/), function (i) { c[rect[i]] = parseInt(this, 10); });
+        $.each(this.coords, function (i) { c[rect[i]] = parseInt(this, 10); });
       }
       
       panel.areas.push(c);
       
-      if (this.className.match(/drag/)) {
+      if (this.klass.drag) {
         // r = [ '#drag', image number, species number, species name, region, start, end, strand ]
-        r        = c.a.href.split('|');
+        r        = c.a.attrs.href.split('|');
         start    = parseInt(r[5], 10);
         end      = parseInt(r[6], 10);
         scale    = (end - start + 1) / (this.vertical ? (c.b - c.t) : (c.r - c.l)); // bps per pixel on image
@@ -225,7 +250,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
         panel.draggables.push(c);
         
         if (highlight === true) {
-          r = this.href.split('|');
+          r = this.attrs.href.split('|');
           speciesNumber = parseInt(r[1], 10) - 1;
           
           if (panel.multi || !speciesNumber) {
@@ -271,12 +296,12 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
         var tip;
 
         // change the cursor to pointer for clickable areas
-        $(this).toggleClass('drag_select_pointer', !(!area || $(area.a).hasClass('label') || $(area.a).hasClass('drag') || $(area.a).hasClass('hover')));
+        $(this).toggleClass('drag_select_pointer', !(!area || area.a.klass.label || area.a.klass.drag || area.a.klass.hover));
 
         // Add helptips on navigation controls in multi species view
-        if (area && area.a && $(area.a).hasClass('nav')) {
-          if (tip !== area.a.alt) {
-            tip = area.a.alt;
+        if (area && area.a && area.a.klass.nav) {
+          if (tip !== area.a.attrs.alt) {
+            tip = area.a.attrs.alt;
             
             if (!panel.elLk.navHelptip) {
               panel.elLk.navHelptip = $('<div class="ui-tooltip helptip-bottom"><div class="ui-tooltip-content"></div></div>');
@@ -319,30 +344,31 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     this.elLk.hoverLayers = $();
 
     $.each(this.areas, function() {
-
       if (!this.a) {
         return;
       }
-
-      var $a = $(this.a);
-
-      if ($a.hasClass('label')) {
-        var hoverLabel = panel.elLk.hoverLabels.filter('.' + this.a.className.replace(/label /, ''));
+      if (this.a.klass.label) {
+        var hoverLabel = '';
+        $.each(this.a.klass,function(k,v) {
+          if(k != 'label') {
+            hoverLabel += k;
+          }
+        });
+        hoverLabel = panel.elLk.hoverLabels.filter('.' + hoverLabel);
 
         if (hoverLabel.length) {
-
           // add a div layer over the label, and append the hover menu to the layer. Hover menu toggling is controlled by CSS.
           panel.elLk.labelLayers = panel.elLk.labelLayers.add(
-            $('<div class="label_layer">').append('<div class="label_layer_bg">').append(hoverLabel).appendTo(document.body).data({area: this})
+            $('<div class="label_layer">').append('<div class="label_layer_bg">').append(hoverLabel).appendTo(panel.elLk.container).data({area: this})
           );
         }
 
         hoverLabel = null;
 
-      } else if ($a.hasClass('hover')) {
+      } else if (this.a.klass.hover) {
 
         panel.elLk.hoverLayers = panel.elLk.hoverLayers.add(
-          $('<div class="hover_layer">').appendTo(document.body).data({area: this}).on('click', function(e) {
+          $('<div class="hover_layer">').appendTo(panel.elLk.container).data({area: this}).on('click', function(e) {
             panel.clicking = true;
             panel.elLk.drag.triggerHandler('click', e);
           }
@@ -394,16 +420,20 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
   },
 
   positionLayers: function() {
-    var offset = this.elLk.img.offset();
-    var right  = this.labelRight;
+    if(!this.elLk.img || !this.elLk.img.length) { return; }
+    var offsetContainer = this.elLk.container.offset();
+    var offsetImg       = this.elLk.img.offset();
+    var top             = offsetImg.top - offsetContainer.top - 1; // 1px border
+    var left            = offsetImg.left - offsetContainer.left - 1;
+    var right           = this.labelRight;
 
     this.elLk.labelLayers.each(function() {
       var $this = $(this);
       var area  = $this.data('area');
 
       $this.css({
-        left:   offset.left + area.l,
-        top:    offset.top + area.t,
+        left:   left + area.l,
+        top:    top + area.t,
         height: area.b - area.t,
         width:  right - area.l
       });
@@ -416,8 +446,8 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       var area  = $this.data('area');
 
       $this.css({
-        left:   offset.left + area.l,
-        top:    offset.top + area.t,
+        left:   left + area.l,
+        top:    top + area.t,
         height: area.b - area.t,
         width:  area.r - area.l
       });
@@ -713,7 +743,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       coords.b = this.dragRegion.b;
     }
     
-    this.highlight(coords, 'rubberband', this.dragRegion.a.href.split('|')[3]);
+    this.highlight(coords, 'rubberband', this.dragRegion.a.attrs.href.split('|')[3]);
   },
   
   resize: function (width) {
@@ -723,20 +753,20 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
   
   makeZMenu: function (e, coords) {
     var area = coords.r ? this.dragRegion : this.getArea(coords);
-    
-    if (!area || $(area.a).hasClass('label')) {
+   
+    if (!area || area.a.klass.label) {
       return;
     }
     
-    if ($(area.a).hasClass('nav')) {
+    if (area.a.klass.nav) {
       Ensembl.redirect(area.a.href);
       return;
     }
     
-    var id = 'zmenu_' + area.a.coords.replace(/[ ,]/g, '_');
+    var id = 'zmenu_' + area.a.coords.join('_');
     var dragArea, range, location, fuzziness;
     
-    if (e.shiftKey || $(area.a).hasClass('das') || $(area.a).hasClass('group')) {
+    if (e.shiftKey || area.a.klass.das || area.a.klass.group) {
       dragArea = this.dragRegion || this.getArea(coords, true);
       range    = dragArea ? dragArea.range : false;
       
@@ -944,13 +974,13 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
   },
   
   getSpecies: function () {
-    var species = $.map(this.draggables, function (el) { return el.a.href.split('|')[3]; });
+    var species = $.map(this.draggables, function (el) { return el.a.attrs.href.split('|')[3]; });
     
     if (species.length) {
       var unique = {};
       unique[Ensembl.species] = 1;
       $.each(species, function () { unique[this] = 1; });
-      species = $.map(unique, function (i, s) { return s });
+      species = $.map(unique, function (i, s) { return s; });
     }
     
     return species.length > 1 ? species : undefined;

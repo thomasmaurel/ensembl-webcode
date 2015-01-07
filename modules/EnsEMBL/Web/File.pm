@@ -20,20 +20,24 @@ package EnsEMBL::Web::File;
 
 use strict;
 
-use File::Path;
-use File::Spec::Functions qw(splitpath);
+use EnsEMBL::Web::Utils::RandomString qw(random_string);
 
-use Bio::EnsEMBL::Utils::IO qw/:all/;
-use EnsEMBL::Web::Tools::RandomString qw(random_ticket random_string);
+use EnsEMBL::Web::File::Utils::IO qw/:all/;
+use EnsEMBL::Web::File::Utils::Memcached qw/:all/;
 
 ### Replacement for EnsEMBL::Web::TmpFile, using the file-handling
-### functionality in the core API to provide error reporting
-### Used to both create new files for writing data, and opening
-### existing files for download
+### functionality in EnsEMBL::Web::File::Utils 
 
-### STATUS: Under development
-
-### N.B. Will probably require subclass for images
+### Data can be written to disk or, if enabled and appropriate, memcached
+### Note that to aid cleanup, all files written to disk should use a common
+### path pattern, as follows:
+### /base_dir/datestamp/user_identifier/sub_dir/file_name.ext
+###  - base_dir is set in subclasses - this is the main temporary file location
+###  - datestamp aids in cleaning up older files by date
+###  - user_identifier is either session id or user id, and 
+###    helps to ensure that users only see their own data
+###  - sub_dir is optional - it's used by a few pages to separate content further
+###  - file_name may be auto-generated, or set by the user
 
 sub new {
 ### @constructor
@@ -41,75 +45,157 @@ sub new {
 ### the name and extension (for new files)
 ### @param Hash of arguments 
 ###  - hub - for getting TMP_DIR location, etc
-###  - location - full path to file (optional)
-###  - prefix - top-level directory (optional)
-###  - name (optional)
-###  - extension - file extension (optional)
-###  - compress (optional) Boolean
+###  - file_path - full path to file (optional)
+###  - name (optional) String - not including file extension
+###  - extension (optional) String
+###  - compression (optional) String
 ### @return EnsEMBL::Web::File
   my ($class, %args) = @_;
-
   my $self = \%args;
-  $self->{'error'} = undef;
 
-  if ($self->{'path'}) {
-    my @path = split('/', $self->{'path'});
-    $self->{'prefix'} = shift @path;
-    $self->{'filename'} = pop @path;
-    $self->{'random_path'} = join('/', @path);
-    ($self->{'extension'} = $self->{'filename'}) =~ s/^\w+//;
-    $self->{'compress'} = $self->{'extension'} =~ /gz$/ ? 1 : 0;
+  ## Set base locations
+  $args{'base_dir'} ||= $self->{'hub'}->species_defs->ENSEMBL_TMP_DIR;
+  $args{'base_url'} ||= $self->{'hub'}->species_defs->ENSEMBL_TMP_URL;
+
+  ## Set default drivers (disk only)
+  $args{'input_drivers'} ||= ['IO'];
+  $args{'output_drivers'} ||= ['IO'];
+
+  $self->{'error'} = undef;
+  bless $self, $class;
+
+  my $file_path = $self->{'file_path'};
+
+  if ($file_path) {
+    ## DEALING WITH AN EXISTING FILE
+   
+    ## Clean up the path
+    my $tmp = $self->{'hub'}->species_defs->ENSEMBL_TMP_DIR;
+    $file_path =~ s/$tmp//;
+    $tmp = $self->{'hub'}->species_defs->ENSEMBL_TMP_URL;
+    $file_path =~ s/$tmp//;
+    $self->{'file_path'} = $file_path;
+
+    my @path = grep length, split('/', $file_path);
+
+    ## Parse filename
+    $self->{'file_name'}     = pop @path;
+    my ($name, $extension, $compression) = split(/\./, $self->{'file_name'});
+    $compression =~ s/2$//; ## We use 'bz' internally, not 'bz2'
+    $self->{'name'}         = $name;
+    $self->{'extension'}    = $extension;
+    $self->{'compression'}  = $compression;
+    $self->{'compress'}     = $self->{'compression'} ? 1 : 0;
+
+    ## Parse rest of path
+    $self->{'dir_path'}         = join('/', @path); 
+    $self->{'datestamp'}        = shift @path;
+    $self->{'user_identifier'}  = shift @path;
+    $self->{'sub_dir'}          = shift @path if scalar @path;
   }
   else {
-    ## Create a filename if none given (not user-friendly, but...whatever)
-    my $name = $self->{'name'} || random_string;
-    ## Make sure it's a valid file name!
-    ($self->{'name'} = $name) =~ s/[^\w]/_/g;
-
-    ### Web-generated files go into a random directory
-    my @random_chars  = split(//, random_ticket);
-    my @pattern  = qw(3 1 1 15);
-    my $random_path;
-    foreach (@pattern) {
-      for (my $i = 0; $i < $_; $i++) {
-        $random_path .= shift @random_chars;
-      }
-      $random_path .= '/';
+    ## CREATING A NEW FILE (or trying to...)
+    if ($self->{'name'}) {
+      ## Make sure it's a valid file name!
+      $self->{'name'} =~ s/[^\w]/_/g;
+      ## Set a random path in case we have multiple files with this name
+      $self->{'sub_dir'} ||= random_string;
     }
-    $self->{'random_path'}  = $random_path;
+    else {
+      ## Create a file name if none given
+      $self->{'name'} = $self->set_timestamp if $args{'name_timestamp'};
+      $self->{'name'} .= random_string;
+    }
 
-    ## Sort out filename
     $self->{'extension'} ||= 'txt';
     ## Allow for atypical file extensions such as gff3 or bedGraph
     (my $extension          = $self->{'extension'}) =~ s/^\.?(\w+)(\.gz)?$/$1/;
     $self->{'extension'}    = $extension;
-    my $filename            = $self->{'name'}.'.'.$extension;
-    $filename               .= '.gz' if $self->{'compress'};
-    $self->{'filename'}     = $filename;
 
-    $self->{'path'}         = sprintf('/%s/%s%s', 
-                                      $self->{'prefix'}, $self->{'random_path'}, 
-                                      $self->{'filename'},
-                                    );
-    &_make_directory($self->{'hub'}->species_defs->ENSEMBL_TMP_DIR.$self->{'path'});
+    my $file_name            = $self->{'name'}.'.'.$extension;
+
+    if ($self->{'compress'}) {
+      unless ($self->{'compression'}) {
+        ## Default to gzip
+        $self->{'compression'} = 'gz';
+      }
+      $file_name .= '.'.$self->{'compression'};
+    }
+
+    $self->{'file_name'} = $file_name;
+
+    my @path_elements = ($self->set_datestamp, $self->set_user_identifier);
+    push @path_elements, $self->{'sub_dir'} if $self->{'sub_dir'};
+    $self->{'dir_path'} = join('/', @path_elements); 
+
+    push @path_elements, $file_name;
+    $self->{'file_path'} = join('/', @path_elements); 
   }
-  $self->{'location'}     = $self->{'hub'}->species_defs->ENSEMBL_TMP_DIR.$self->{'path'}; 
-  $self->{'url'}          = $self->{'hub'}->species_defs->ENSEMBL_TMP_URL.$self->{'path'}; 
+  $self->{'base_path'}    = $self->{'base_dir'}.'/'.$self->{'dir_path'}; 
+  $self->{'location'}     = $self->{'base_dir'}.'/'.$self->{'file_path'}; 
+  $self->{'url'}          = $self->{'base_url'}.'/'.$self->{'file_path'}; 
 
-  bless $self, $class;
   return $self;
 }
 
-sub filename {
+sub file_name {
 ### a
   my $self = shift;
-  return $self->{'filename'};
+  return $self->{'file_name'};
 }
 
-sub random_path {
+sub extension {
 ### a
   my $self = shift;
-  return $self->{'random_path'};
+  return $self->{'extension'};
+}
+
+sub compression {
+### a
+  my $self = shift;
+  return $self->{'compression'};
+}
+
+sub compress {
+### a
+  my $self = shift;
+  return $self->{'compress'};
+}
+
+sub datestamp {
+### a
+  my $self = shift;
+  return $self->{'datestamp'};
+}
+
+sub user_identifier {
+### a
+  my $self = shift;
+  return $self->{'user_identifier'};
+}
+
+sub file_path {
+### a
+  my $self = shift;
+  return $self->{'file_path'};
+}
+
+sub sub_dir {
+### a
+  my $self = shift;
+  return $self->{'sub_dir'};
+}
+
+sub base_path {
+### a
+  my $self = shift;
+  return $self->{'base_path'};
+}
+
+sub base_dir {
+### a
+  my $self = shift;
+  return $self->{'base_dir'};
 }
 
 sub location {
@@ -124,161 +210,196 @@ sub url {
   return $self->{'url'};
 }
 
+sub hub {
+### a
+  my $self = shift;
+  return $self->{'hub'};
+}
+
 sub error {
 ### a
   my $self = shift;
   return $self->{'error'};
 }
 
-sub is_compressed {
-### a
+sub set_timestamp {
+### Create a timestamp as part of a filename
   my $self = shift;
-  return $self->{'compress'} ? 1 : 0;
+
+  my @time  = localtime;
+  my $hour  = $time[2];
+  my $min   = $time[1];
+  my $sec   = $time[0];
+
+  $self->{'name'} = sprintf('%s%s%s', $hour, $min, $sec);
+  return $self->{'name'};
 }
 
-sub _make_directory {
-### Creates a writeable directory - making sure all parents exist!
-  my $path = shift;
+sub set_datestamp {
+  ### a
+  my $self = shift;
+  
+  my @time  = localtime;
+  my $day   = $time[3];
+  my $month = $time[4] + 1;
+  my $year  = $time[5] + 1900;
 
-  my ($volume, $dir_path, $file) = splitpath( $path );
-  mkpath( $dir_path, 0, 0777 );
-  return ($dir_path, $file);
+  $self->{'datestamp'} = sprintf('%s_%s_%s', $year, $month, $day);
+  return $self->{'datestamp'};
 }
 
-sub fetch {
-### Get raw content of file (e.g. for download, hence not uncompressed)
-### @return String (entire file)
+sub set_user_identifier {
+  ### a
   my $self = shift;
-  my $content;
-  eval { $content = slurp($self->location) }; 
-  if ($@) {
-    $self->{'error'} = $@;
-  }
-  return $content;
-}
-
-sub read {
-### Get entire content of file, uncompressed
-### @return String (entire file)
-  my $self = shift;
-  my $content;
-  if ($self->is_compressed) {
-    eval { $content = gz_slurp($self->location) }; 
+  my $hub = $self->hub;
+ 
+  if ($hub->user) {
+    $self->{'user_identifier'} = 'user_'.$hub->user->id;
   }
   else {
-    eval { $content = slurp($self->location) }; 
-  }
-  if ($@) {
-    $self->{'error'} = $@;
-  }
-  return $content;
+    $self->{'user_identifier'} = 'session_'.$hub->session->session_id;
+  } 
+
+  return $self->{'user_identifier'};
 }
 
-sub read_lines {
-### Get entire content of file as separate lines
-### @return Arrayref
-  my $self = shift;
-  my $content = [];
-  if ($self->is_compressed) {
-    eval { $content = gz_slurp_to_array($self->location) }; 
-  }
-  else {
-    eval { $content = slurp_to_array($self->location) }; 
-  }
-  if ($@) {
-    $self->{'error'} = $@;
-  }
-  return $content;
-}
-
-sub preview {
-### Get n lines of a file, e.g. for a web preview
-### @param Integer - number of lines required (default is 10)
-### @return Arrayref (n lines of file)
-  my ($self, $limit) = @_;
-  $limit ||= 10;
-  my $count = 0;
-  my $lines = [];
-  my $method = $self->is_compressed ? 'gz_work_with_file' : 'work_with_file';
-
-  eval { 
-    &$method($self->location, 'r',
-      sub {
-        my $fh = shift;
-        while (<$fh>) {
-          $count++;
-          push @$lines, $_;
-          last if $count == $limit;
-        }
-        return;
-      }
-    );
-  };
-
-  if ($@) {
-    $self->{'error'} = $@;
-  }
-  return $lines; 
-}
+### Wrappers around E::W::File::Utils::* methods
 
 sub exists {
 ### Check if a file of this name exists
 ### @return Boolean
   my $self = shift;
-  return -e $self->location && -f $self->location;
+  my $result = {};
+
+  foreach (@{$self->{'input_drivers'}}) {
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::file_exists'; 
+    my $args = {
+                'hub'   => $self->hub,
+                'nice'  => 1,
+                };
+    eval {
+      no strict 'refs';
+      $result = &$method($self, $args);
+    };
+    last unless $result->{'error'}; 
+  }
+  return $result->{'error'} ? 0 : 1;
+}
+
+sub fetch {
+### Get file uncompressed, e.g. for downloading
+### @return Hashref 
+  my $self = shift;
+  my $result = {};
+
+  foreach (@{$self->{'input_drivers'}}) {
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::fetch_file';
+    my $args = {
+                'hub'   => $self->hub,
+                'nice'  => 1,
+                };
+
+    eval {
+      no strict 'refs';
+      $result = &$method($self, $args);
+    };
+    last if $result->{'content'};
+  }
+  return $result;
+}
+
+sub read {
+### Get entire content of file, uncompressed
+### @return Hashref 
+  my $self = shift;
+  my $result = {};
+
+  foreach (@{$self->{'input_drivers'}}) {
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::read_file'; 
+    my $args = {
+                'hub'   => $self->hub,
+                'nice'  => 1,
+                };
+
+    eval {
+      no strict 'refs';
+      $result = &$method($self, $args);
+    };
+    last if $result->{'content'};
+  }
+  return $result;
 }
 
 sub write {
 ### Write entire file
 ### @param Arrayref - lines of file
-### @return Void
-  my ($self, $lines) = @_;
+### @return Hashref 
+  my ($self, $content) = @_;
+  my $result = {};
+ 
+  foreach (@{$self->{'output_drivers'}}) {
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::write_file'; 
+    my $args = {
+                'hub'     => $self->hub,
+                'nice'    => 1,
+                'content' => $content,
+                };
 
-  unless (ref($lines) eq 'ARRAY') {
-        $self->{'error'} = 'Input must be an arrayref!';
-    return;
+    eval {
+      no strict 'refs';
+      $result = &$method($self, $args);
+    };
+    warn "!!! ".$result->{'error'} if $result->{'error'};
+    last unless $result->{'error'};
   }
-  
-  $self->_write_to_file($self->location, '>',
-      sub {
-        my $fh = shift;
-        foreach (@$lines) {
-          print $fh, $_;
-        }
-        return;
-      }
-  );
+  return $result;
 }
 
 sub write_line {
-### Write (append) a single line to a file
+### Write content to a new file, or append single line to an existing file  
 ### @param String
-### @return Void 
-  my ($self, $line) = @_;
+### @return Hashref 
+  my ($self, $content) = @_;
+  my $result = {};
+  $content = [$content] unless ref($content) eq 'ARRAY';
+ 
+  foreach (@{$self->{'output_drivers'}}) {
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::append_lines'; 
+    my $args = {
+                'hub'     => $self->hub,
+                'nice'    => 1,
+                'content' => $content,
+                };
 
-  $self->_write_to_file($self->location, '>>',
-      sub {
-        my ($fh) = @_;
-        print $fh $line;
-        return;
-      }
-  );
+    eval {
+      no strict 'refs';
+      $result = &$method($self, $args);
+    };
+    last unless $result->{'error'};
+  }
+  return $result;
 }
 
-sub _write_to_file {
-  my ($self, @params) = @_;
+sub delete {
+### Delete file
+### @return Hashref
+  my $self = shift;
+  my $result = {};
+ 
+  foreach (@{$self->{'output_drivers'}}) {
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::delete_file'; 
+    my $args = {
+                'hub'     => $self->hub,
+                'nice'    => 1,
+                };
 
-  if ($self->is_compressed) {
-    eval { gz_work_with_file(@params); }
+    eval {
+      no strict 'refs';
+      $result = &$method($self, $args);
+    };
+    last unless $result->{'error'};
   }
-  else {
-    eval { work_with_file(@params); }
-  }
-
-  if ($@) {
-    $self->{'error'} = $@;
-    warn "!!! $@";
-  }
+  return $result;
 }
 
 1;

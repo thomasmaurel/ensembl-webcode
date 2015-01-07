@@ -21,10 +21,12 @@ package EnsEMBL::Web::Document::Image;
 use strict;
 
 use POSIX qw(ceil);
+use JSON;
+use HTML::Entities qw(encode_entities);
 
 use EnsEMBL::Draw::VDrawableContainer;
 
-use EnsEMBL::Web::TmpFile::Image;
+use EnsEMBL::Web::File::Dynamic::Image;
 
 sub new {
   my ($class, $hub, $component, $image_configs) = @_;
@@ -377,7 +379,7 @@ sub extra_style {
 sub render_image_tag {
   my ($self, $image) = @_;
   
-  my $url    = $image->URL;
+  my $url    = $image->url;
   my $width  = $image->width;
   my $height = $image->height;
   my $html;
@@ -426,13 +428,13 @@ sub render_image_button {
 sub render_image_map {
   my ($self, $image) = @_;
 
-  my $imagemap = $self->drawable_container->render('imagemap');
-  my $map_name = $image->token;
-  
+  my $imagemap = encode_entities(encode_json($self->drawable_container->render('imagemap')));
+  my $map_name;
+
   my $map = qq(
-    <map name="$map_name">
+    <div class="json_$map_name json_imagemap" style="display: none">
       $imagemap
-    </map>
+    </div>
   );
   
   $map .= '<input type="hidden" class="panel_type" value="ImageMap" />';
@@ -561,7 +563,7 @@ sub moveable_tracks {
   return unless $self->has_moveable_tracks;
   
   my $species = $config->species;
-  my $url     = $image->URL;
+  my $url     = $image->url;
   my ($top, $html);
   
   foreach (@{$self->track_boundaries}) {
@@ -595,12 +597,15 @@ sub render {
   }
 
   my $html    = $self->introduction;
-  my $image   = EnsEMBL::Web::TmpFile::Image->new;
+  my $image   = EnsEMBL::Web::File::Dynamic::Image->new(
+                                                        'hub'             => $self->hub,
+                                                        'name_timestamp'  => 1,
+                                                        'extension'       => 'png',
+                                                        );
   my $content = $self->drawable_container->render('png');
   my $caption_style  = 'image-caption';
 
-  $image->content($content);
-  $image->save;
+  $image->write($content);
 
   my ($top_toolbar, $bottom_toolbar) = $self->has_toolbars ? $self->render_toolbar($image->height) : ();
   

@@ -26,6 +26,7 @@ use JSON qw(from_json);
 use URI::Escape qw(uri_unescape);
 
 use Bio::EnsEMBL::ExternalData::DAS::Coordinator;
+use Bio::EnsEMBL::ExternalData::DataHub::SourceParser;
 
 use Sanger::Graphics::TextHelper;
 
@@ -797,7 +798,7 @@ sub _add_datahub {
 
   return ($menu_name, {}) if $self->{'_attached_datahubs'}{$url};
 
-  my $parser   = Bio::EnsEMBL::ExternalData::DataHub::SourceParser->new({ timeout => 10, proxy => $self->hub->species_defs->ENSEMBL_WWW_PROXY });
+  my $parser   = Bio::EnsEMBL::ExternalData::DataHub::SourceParser->new('hub' => $self->hub);
   my $hub_info = $parser->get_hub_info($url, $self->species_defs->assembly_lookup); ## Do we have data for this species?
   
   if ($hub_info->{'error'}) {
@@ -1420,6 +1421,8 @@ sub update_from_url {
         }
 
         # We then have to create a node in the user_config
+        my %ensembl_assemblies = %{$hub->species_defs->assembly_lookup};
+
         if (uc $format eq 'DATAHUB') {
           my $info;
           ($n, $info) = $self->_add_datahub($n, $p,1);
@@ -1435,7 +1438,6 @@ sub update_from_url {
           else {
             my $assemblies = $info->{'genomes'}
                         || {$hub->species => $hub->species_defs->get_config($hub->species, 'ASSEMBLY_VERSION')};
-            my %ensembl_assemblies = %{$hub->species_defs->assembly_lookup};
 
             foreach (keys %$assemblies) {
               my ($data_species, $assembly) = @{$ensembl_assemblies{$_}||[]};
@@ -1460,15 +1462,23 @@ sub update_from_url {
             style => $style
           );
 
+          ## Assume the data is for the current assembly
+          my $assembly;
+          while (my($a, $info) = each (%ensembl_assemblies)) {
+            $assembly = $info->[1] if $info->[0] eq $species;
+            last if $assembly;
+          }
+ 
           $self->update_track_renderer("url_$code", $renderer);
           $session->set_data(
-            type    => 'url',
-            url     => $p,
-            species => $species,
-            code    => $code,
-            name    => $n,
-            format  => $format,
-            style   => $style,
+            type      => 'url',
+            url       => $p,
+            species   => $species,
+            code      => $code,
+            name      => $n,
+            format    => $format,
+            style     => $style,
+            assembly  => $assembly,
           );
         }
         # We have to create a URL upload entry in the session

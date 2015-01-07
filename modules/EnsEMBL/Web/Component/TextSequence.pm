@@ -24,7 +24,7 @@ use RTF::Writer;
 
 use EnsEMBL::Web::Fake;
 use EnsEMBL::Web::TmpFile::Text;
-use EnsEMBL::Web::Tools::RandomString qw(random_string);
+use EnsEMBL::Web::Utils::RandomString qw(random_string);
 use HTML::Entities        qw(encode_entities);
 
 use Sanger::Graphics::ColourMap;
@@ -127,7 +127,7 @@ sub get_sequence_data {
     if($adorn ne 'none') {
       $self->set_variations($config, $sl, $mk, $sequence) if $config->{'snp_display'} ne 'off';
     }
-    $self->set_exons($config, $sl, $mk)                 if $config->{'exon_display'};
+    $self->set_exons($config, $sl, $mk)                 if $config->{'exon_display'} ne 'off';
     $self->set_codons($config, $sl, $mk)                if $config->{'codons_display'};
     
     push @markup, $mk;
