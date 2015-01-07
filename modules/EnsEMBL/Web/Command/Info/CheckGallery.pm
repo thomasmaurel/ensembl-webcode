@@ -82,7 +82,7 @@ sub process {
     $error = $fatal_errors[0]->description; 
   }
   else {
-    my $object = $factory->dataObjects($data_type);
+    my $object = $factory->object;
     unless ($object) {
       $error = sprintf('%s %s could not be found in species %s. Please try again.', $data_type, $id, $common_name);
     }
