@@ -23,9 +23,18 @@ use strict;
 use base qw(EnsEMBL::Web::Component);
 
 our $data_type = {
-                  'Gene'      => {'param' => 'g', 'label' => 'Choose a Gene'},
-                  'Variation' => {'param' => 'v', 'label' => 'Choose a Variant'},
-                  'Location'  => {'param' => 'r', 'label' => 'Choose Coordinates'},
+                  'Gene'      => {'param'   => 'g', 
+                                  'label_1' => 'Choose a Gene',
+                                  'label_2' => 'or choose another Gene',
+                                  },
+                  'Variation' => {'param'   => 'v', 
+                                  'label_1' => 'Choose a Variant',
+                                  'label_2' => 'or choose another Variant',
+                                  },
+                  'Location'  => {'param'   => 'r', 
+                                  'label_1' => 'Choose Coordinates',
+                                  'label_2' => 'or choose different coordinates'
+                                  },
                   };
 
 sub format_gallery {
@@ -69,6 +78,8 @@ sub format_gallery {
       my $form = $self->new_form({'action' => $page->{'url'}, 'method' => 'post'});
 
       my ($field, $data_param);
+      my $label = $self->hub->param('default') ? 'label_1' : 'label_2';
+      my $value = $self->hub->param('default') ? $self->hub->param($data_param) : undef;
 
       if ($page->{'multi'}) {
         $data_param = $page->{'multi'}{'param'};
@@ -76,9 +87,9 @@ sub format_gallery {
         $field      = $form->add_field({
                                         'type'    => 'Dropdown',
                                         'name'    => $data_param,
-                                        'label'   => $data_type->{$type}{'label'},
+                                        'label'   => $data_type->{$type}{$label},
                                         'values'  => $page->{'multi'}{'values'},
-                                        'value'   => $self->hub->param($data_param),
+                                        'value'   => $value,
                                         });
       }
       else {
@@ -87,8 +98,8 @@ sub format_gallery {
                                         'type'  => 'String',
                                         'size'  => 10,
                                         'name'  => $data_param,
-                                        'label' => $data_type->{$type}{'label'},
-                                        'value' => $self->hub->param($data_param),
+                                        'label' => $data_type->{$type}{$label},
+                                        'value' => $value,
                                         });
       }
 
