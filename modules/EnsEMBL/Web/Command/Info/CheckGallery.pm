@@ -33,27 +33,62 @@ sub process {
   my $species            = $hub->param('species');
 
   my $data_type = $hub->param('data_type_var') || $hub->param('data_type_novar');
+
+  my $core_params = {
+                    'Gene'      => 'g',
+                    'Location'  => 'r',
+                    'Variation' => 'v',
+                    };
+
   my $url_params = {
-                    'species' => $species,
-                    'type'    => 'Info',
-                    'action'  => $data_type.'Gallery',
+                    'species'   => $species,
+                    'type'      => 'Info',
+                    'data_type' => $data_type,
+                    'action'    => $data_type.'Gallery',
                   };
 
   ## Check validity of identifier
   my $id = $hub->param('identifier');
 
-  my $error;
+  ## Use default for this species if user didn't supply one
+  unless ($id) {
+    $url_params->{'default'} = 'yes';
+    my $sample_data = { %{$hub->species_defs->get_config($species, 'SAMPLE_DATA') || {}} };
+    $id = $sample_data->{uc($data_type).'_PARAM'};
+  }
 
-  if ($id) {
-    my $object = $hub->core_object(lc($data_type));
-    my $common_name = $hub->species_defs->get_config($species, 'SPECIES_COMMON_NAME');
+  $hub->param($core_params->{$data_type}, $id); ## Set this so it can be used by factory
+  $url_params->{$core_params->{$data_type}} =  $id; 
+
+  my $error;
+  my $common_name = $hub->species_defs->get_config($species, 'SPECIES_COMMON_NAME');
+
+  my $builder   = $hub->{'_builder'};
+  ## Don't use the create_factory method, as its error-handling 
+  ## is not ideal for this situation!
+
+  my $data = {
+    _hub       => $hub,
+    _input     => $hub->input,
+    _databases => $hub->databases,
+    _referer   => $hub->referer
+  };
+
+  my $factory = $self->new_factory($data_type, $data);
+  $factory->createObjects;
+
+  if ($hub->get_problem_type('fatal')) {
+    my @fatal_errors = @{$hub->{'_problem'}{'fatal'}||[]};
+    $error = $fatal_errors[0]->description; 
+  }
+  else {
+    my $object = $factory->dataObjects($data_type);
     unless ($object) {
       $error = sprintf('%s %s could not be found in species %s. Please try again.', $data_type, $id, $common_name);
     }
   }
- 
+
   if ($error) {
-    my $species = $hub->species_defs->get_config($hub->param('species'), 'SPECIES_COMMON_NAME');
     $hub->session->add_data(
                             'type'      => 'message',
                             'code'      => 'gallery',
@@ -63,22 +98,6 @@ sub process {
     $self->ajax_redirect('/gallery.html');
   }
   else { 
-    ## Use default for this species if user didn't supply one
-    unless ($id) {
-      $url_params->{'default'} = 'yes';
-      my $sample_data = { %{$hub->species_defs->get_config($species, 'SAMPLE_DATA') || {}} };
-      $id = $sample_data->{uc($data_type).'_PARAM'};
-    }
-
-    if ($data_type eq 'Variation') {
-      $url_params->{'v'} = $id;
-    }
-    elsif ($data_type eq 'Gene') {
-      $url_params->{'g'} = $id;
-    }
-    elsif ($data_type eq 'Location') {
-      $url_params->{'r'} = $id;
-    }
     $self->ajax_redirect($hub->url($url_params));
   }
 }
