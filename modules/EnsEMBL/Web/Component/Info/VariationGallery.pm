@@ -83,19 +83,24 @@ sub _get_pages {
 
   ## Check availabity of views for this variant
   my ($no_location, $multi_location) = (0, 0);
+  my ($no_gene, $multi_gene) = (0, 0);
 
-  my $object    = $hub->core_object('variation');
+  my $builder   = $hub->{'_builder'};
+  my $factory   = $builder->create_factory('Variation');
+  my $object    = $factory->object;
 
   if (!$object) {
     return $self->warning_panel('Invalid identifier', 'Sorry, that identifier could not be found. Please try again.');
   }
   else {
+    ## Location checking
     my %mappings = %{$object->variation_feature_mapping};
     if (scalar keys %mappings == 0) {
       $no_location = 1;
+      $no_gene = 1;
     }
     elsif (scalar keys %mappings > 1) {
-      my $multi_location = {
+      $multi_location = {
                           'type'    => 'Location',
                           'param'   => 'r',
                           'values'  => [],
@@ -103,6 +108,33 @@ sub _get_pages {
       foreach (sort { $mappings{$a}{'Chr'} cmp $mappings{$b}{'Chr'} || $mappings{$a}{'start'} <=> $mappings{$b}{'start'}} keys %mappings) {
         my $coords = sprintf('%s:%s-%s', $mappings{$_}{'Chr'}, $mappings{$_}{'start'}, $mappings{$_}{'end'});
         push @{$multi_location->{'values'}}, {'value' => $coords, 'caption' => $coords};
+      }
+    }
+
+    ## Gene checking
+    my ($g, %genes);
+    my $gene_adaptor  = $hub->get_adaptor('get_GeneAdaptor');
+    foreach my $varif_id (grep $_ eq $hub->param('vf'), keys %mappings) {
+      foreach my $transcript_data (@{$mappings{$varif_id}{'transcript_vari'}}) {
+        my $gene = $gene_adaptor->fetch_by_transcript_stable_id($transcript_data->{'transcriptname'}); 
+        $genes{$gene->stable_id}++ if $gene;
+      }
+    }
+
+    if (scalar keys %genes) {
+      if (scalar keys %genes > 1) {
+        $multi_gene = {
+                          'type'    => 'Gene',
+                          'param'   => 'g',
+                          'values'  => [],
+                          };
+        foreach (sort keys %genes) {
+          push @{$multi_gene->{'values'}}, {'value' => $_, 'caption' => $_};
+        }
+      }
+      else {
+        my @ids = keys %genes;
+        $g = $ids[0];
       }
     }
 
@@ -141,28 +173,37 @@ sub _get_pages {
                                   'caption' => 'Phylogenetic context of this variant',
                                   },
           'Gene Sequence' => {
-                                  'url'     => $hub->url({'type'    => 'Gene',
+                                  'url'       => $hub->url({'type'  => 'Gene',
                                                           'action'  => 'Sequence',
-                                                          'v'      => $v,
+                                                          'v'       => $v,
+                                                          'g'       => $g,
                                                           }),
-                                  'img'     => 'variation_gene_seq',
-                                  'caption' => 'Sequence of the gene overlapping this variant',
+                                  'img'       => 'variation_gene_seq',
+                                  'caption'   => 'Sequence of the gene overlapping this variant',
+                                  'multi'     => $multi_gene,  
+                                  'disabled'  => $no_gene,  
                             },
           'Gene Image' => {
-                                  'url'     => $hub->url({'type'    => 'Gene',
+                                  'url'       => $hub->url({'type'    => 'Gene',
                                                           'action'  => 'Variation_Gene/Image',
-                                                          'v'      => $v,
+                                                          'v'       => $v,
+                                                          'g'       => $g,
                                                           }),
-                                  'img'     => 'variation_gene_image',
-                                  'caption' => 'Image showing all variants within the same gene as this one',
+                                  'img'       => 'variation_gene_image',
+                                  'caption'   => 'Image showing all variants within the same gene as this one',
+                                  'multi'     => $multi_gene,  
+                                  'disabled'  => $no_gene,  
                           },
           'Gene Table' => {
-                                  'url'     => $hub->url({'type'    => 'Gene',
+                                  'url'       => $hub->url({'type'    => 'Gene',
                                                           'action'  => 'Variation_Gene/Table',
                                                           'v'      => $v,
+                                                          'g'       => $g,
                                                         }),
-                                  'img'     => 'variation_gene_table',
-                                  'caption' => 'Table of variants within the same gene as this one',
+                                  'img'       => 'variation_gene_table',
+                                  'caption'   => 'Table of variants within the same gene as this one',
+                                  'multi'     => $multi_gene,  
+                                  'disabled'  => $no_gene,  
                           },
           'Gene Regulation' => {
                                   'url'     => $hub->url({'type'    => 'Variation',
