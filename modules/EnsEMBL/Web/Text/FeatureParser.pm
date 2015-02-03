@@ -285,7 +285,7 @@ sub parse {
 
 sub split_into_columns {
   my ($self, $row, $format) = @_;
-  my @columns; ;
+  my @columns;
   my $tabbed = 0;
   if ($format) { ## Parsing a known file
     if ($format =~ /^GF/) {
