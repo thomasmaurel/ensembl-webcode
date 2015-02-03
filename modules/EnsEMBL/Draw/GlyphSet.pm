@@ -42,6 +42,7 @@ use Sanger::Graphics::Glyph::Rect;
 use Sanger::Graphics::Glyph::Space;
 use Sanger::Graphics::Glyph::Sprite;
 use Sanger::Graphics::Glyph::Text;
+use Sanger::Graphics::Glyph::Arc;
 
 use Bio::EnsEMBL::Registry;
 
@@ -131,6 +132,7 @@ sub Space      { my $self = shift; return Sanger::Graphics::Glyph::Space->new(@_
 sub Sprite     { my $self = shift; return Sanger::Graphics::Glyph::Sprite->new(@_);     }
 sub Text       { my $self = shift; return Sanger::Graphics::Glyph::Text->new(@_);       }
 sub Triangle   { my $self = shift; return Sanger::Graphics::Glyph::Triangle->new(@_);   }
+sub Arc        { my $self = shift; return Sanger::Graphics::Glyph::Arc->new(@_);   }
 
 sub render {
   my $self   = shift;
