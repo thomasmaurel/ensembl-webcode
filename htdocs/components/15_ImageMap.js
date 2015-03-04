@@ -19,6 +19,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     this.base(id, params);
     
     this.dragging         = false;
+    this.panning          = false;
     this.clicking         = true;
     this.dragCoords       = {};
     this.dragRegion       = {};
@@ -28,6 +29,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     this.speciesCount     = 0;
     this.minImageWidth    = 500;
     this.labelRight       = 0;
+    this.boxCoords        = {}; // only passed to the backend as GET param when downloading the image to embed the red highlight box into the image itself
     
     function resetOffset() {
       delete this.imgOffset;
@@ -37,7 +39,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     Ensembl.EventManager.register('mouseUp',            this, this.dragStop);
     Ensembl.EventManager.register('hashChange',         this, this.hashChange);
     Ensembl.EventManager.register('changeFavourite',    this, this.changeFavourite);
-    Ensembl.EventManager.register('imageResize',        this, function () { if (this.xhr) { this.xhr.abort(); } this.getContent(); });
+    Ensembl.EventManager.register('imageResize',        this, this.getContent);
     Ensembl.EventManager.register('windowResize',       this, resetOffset);
     Ensembl.EventManager.register('ajaxLoaded',         this, resetOffset); // Adding content could cause scrollbars to appear, changing the offset, but this does not fire the window resize event
     Ensembl.EventManager.register('changeWidth',        this, function () { this.params.updateURL = Ensembl.updateURL({ image_width: false }, this.params.updateURL); Ensembl.EventManager.trigger('queuePageReload', this.id); });
@@ -127,11 +129,23 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       
       return false;
     });
+
+    if (this.elLk.boundaries.length && this.draggables.length) {
+      this.panning = Ensembl.cookie.get('ENSEMBL_REGION_PAN') === '1';
+      this.elLk.toolbars.append('<div class="scroll-switch"><label>Move/Select:<select><option>Select</option><option>Move</option></select></label>').find('select').on('change', function() {
+        var flag = $(this).find('option:selected').html() == 'Move';
+        if (flag !== panel.panning) {
+          panel.panning = flag;
+          Ensembl.cookie.set('ENSEMBL_REGION_PAN', flag ? '1' : '0');
+        }
+      }).find('option:contains("' + (panel.panning ? 'Move' : 'Select') + '")').prop('selected', true);
+    }
+
   },
 
   loadJSON: function(str) {
     // this will be more complex when compression is used
-    if(!str) { return []; }
+    if(!str) { return { out: [], flags: {} }; }
     raw = $.parseJSON(str);
     out = [];
     flags = {};
@@ -162,6 +176,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
         type: 'post',
         success: function() {
           Ensembl.EventManager.triggerSpecific('resetConfig', 'modal_config_' + this.id.toLowerCase());
+          Ensembl.EventManager.trigger('resetMessage');
           this.getContent();
         },
         data: {
@@ -196,7 +211,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     }
   },
   
-  getContent: function () {
+  getContent: function (url, el, params, newContent, attrs) {
     // If the panel contains an ajax loaded sub-panel, this function will be reached before ImageMap.init has been completed.
     // Make sure that this doesn't cause an error.
     if (this.imageConfig) {
@@ -209,7 +224,12 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       this.removeShare();
     }
     
-    this.base.apply(this, arguments);
+    if (this.elLk.boundariesPanning) {
+      attrs = attrs || {};
+      attrs.background = true;
+    }
+
+    this.base.call(this, url, el, params, newContent, attrs);
     
     this.xhr.done(function (html) {
       if (!html) {
@@ -238,7 +258,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       
       panel.areas.push(c);
       
-      if (this.klass.drag) {
+      if (this.klass.drag || this.klass.vdrag) {
         // r = [ '#drag', image number, species number, species name, region, start, end, strand ]
         r        = c.a.attrs.href.split('|');
         start    = parseInt(r[5], 10);
@@ -296,7 +316,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
         var tip;
 
         // change the cursor to pointer for clickable areas
-        $(this).toggleClass('drag_select_pointer', !(!area || area.a.klass.label || area.a.klass.drag || area.a.klass.hover));
+        $(this).toggleClass('drag_select_pointer', !(!area || area.a.klass.label || area.a.klass.drag || area.a.klass.vdrag || area.a.klass.hover));
 
         // Add helptips on navigation controls in multi species view
         if (area && area.a && area.a.klass.nav) {
@@ -699,21 +719,41 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     }
     
     if (this.dragging !== false) {
-      diff = { 
-        x: e.pageX - this.dragCoords.page.x, 
-        y: e.pageY - this.dragCoords.page.y
-      };
-      
-      // Set a limit below which we consider the event to be a click rather than a drag
-      if (Math.abs(diff.x) < 3 && Math.abs(diff.y) < 3) {
-        this.clicking = true; // Chrome fires mousemove even when there has been no movement, so catch clicks here
-      } else {
-        range = this.vertical ? { r: diff.y, s: this.dragCoords.map.y } : { r: diff.x, s: this.dragCoords.map.x };
-        
-        this.makeZMenu(e, range);
-        
+      if (this.elLk.boundariesPanning) {
+
         this.dragging = false;
         this.clicking = false;
+
+        this.elLk.boundariesPanning.helptip('destroy');
+
+        if (!this.newLocation) {
+          this.elLk.boundariesPanning.parent().remove();
+          this.elLk.boundariesPanning = false;
+          return;
+        }
+
+        this.elLk.boundariesPanning.parent().append('<div class="spinner">');
+
+        Ensembl.updateLocation(this.newLocation);
+
+      } else {
+
+        diff = {
+          x: e.pageX - this.dragCoords.page.x,
+          y: e.pageY - this.dragCoords.page.y
+        };
+        
+        // Set a limit below which we consider the event to be a click rather than a drag
+        if (Math.abs(diff.x) < 3 && Math.abs(diff.y) < 3) {
+          this.clicking = true; // Chrome fires mousemove even when there has been no movement, so catch clicks here
+        } else {
+          range = this.vertical ? { r: diff.y, s: this.dragCoords.map.y } : { r: diff.x, s: this.dragCoords.map.x };
+          
+          this.makeZMenu(e, range);
+          
+          this.dragging = false;
+          this.clicking = false;
+        }
       }
     }
   },
@@ -746,8 +786,37 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     if (!this.vertical || y > this.dragRegion.b) {
       coords.b = this.dragRegion.b;
     }
-    
-    this.highlight(coords, 'rubberband', this.dragRegion.a.attrs.href.split('|')[3]);
+
+    if (this.panning) {
+      this.panImage(e);
+    } else {
+      this.highlight(coords, 'rubberband', this.dragRegion.a.attrs.href.split('|')[3]);
+    }
+  },
+
+  panImage: function(e) {
+
+    if (!this.elLk.boundariesPanning) {
+
+      this.elLk.boundariesPanning = $('<div class="boundaries_panning">')
+        .appendTo(this.elLk.boundaries.parent())
+        .append(this.elLk.boundaries.clone())
+        .css({ left: this.labelRight, right: 4 })
+        .find('ul').find('li').css('marginLeft', -1 * this.labelRight)
+        .end().helptip({delay: 500, position: { at: 'center', of: this.el }});
+    }
+
+    var locationDisplacement = Math.min(this.dragRegion.range.start - 1, Math.round((e.pageX - this.dragCoords.page.x) * this.dragRegion.range.scale));
+
+    if (locationDisplacement) {
+      this.newLocation = this.dragRegion.range.chr + ':' + (this.dragRegion.range.start - locationDisplacement) + '-' + (this.dragRegion.range.end - locationDisplacement);
+      this.elLk.boundariesPanning.helptip('option', 'content', this.newLocation).helptip('open');
+    } else {
+      this.newLocation = false;
+      this.elLk.boundariesPanning.helptip('close');
+    }
+
+    this.elLk.boundariesPanning.css('left', locationDisplacement / this.dragRegion.range.scale + 'px');
   },
   
   resize: function (width) {
@@ -873,6 +942,7 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
       
       // Highlight unless it's the bottom image on the page
       if (this.params.highlight) {
+        this.updateExportMenu(coords, speciesNumber, imageNumber);
         this.highlight(coords, 'redbox2', speciesNumber, i);
       }
     }
@@ -916,7 +986,26 @@ Ensembl.Panel.ImageMap = Ensembl.Panel.Content.extend({
     
     els = null;
   },
-  
+
+  updateExportMenu: function(coords, speciesNumber, imageNumber) {
+    var panel = this;
+
+    if (this.imageNumber === imageNumber) {
+
+      this.boxCoords[speciesNumber] = coords;
+
+      this.elLk.exportMenu.find('a').each(function() {
+        var href = $(this).data('href');
+        if (!href) {
+          $(this).data('href', this.href);
+          href = this.href;
+        }
+
+        this.href = href + ';box=' + encodeURIComponent(JSON.stringify(panel.boxCoords));
+      });
+    }
+  },
+
   getMapCoords: function (e) {
     this.imgOffset = this.imgOffset || this.elLk.img.offset();
     

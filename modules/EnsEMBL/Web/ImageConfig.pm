@@ -87,13 +87,13 @@ sub new {
       other       => 1,
     },
     alignment_renderers => [
-      'off',         'Off',
-      'normal',      'Normal',
-      'labels',      'Labels',
-      'half_height', 'Half height',
-      'stack',       'Stacked',
-      'unlimited',   'Stacked unlimited',
-      'ungrouped',   'Ungrouped',
+      'off',                  'Off',
+      'as_alignment_nolabel', 'Normal',
+      'as_alignment_label',   'Labels',
+      'half_height',          'Half height',
+      'stack',                'Stacked',
+      'unlimited',            'Stacked unlimited',
+      'ungrouped',            'Ungrouped',
     ],
   };
   
@@ -1094,7 +1094,8 @@ sub load_file_format {
         $self->_add_datahub($source->{'source_name'}, $source->{'url'}, undef, $menu);
       }
       else { 
-        $self->$function(key => $source_name, menu => $menu, source => $source, description => $source->{'description'}, internal => $internal, view => $view);
+        my $is_internal = $source->{'source_url'} ? 0 : $internal;
+        $self->$function(key => $source_name, menu => $menu, source => $source, description => $source->{'description'}, internal => $is_internal, view => $view);
       }
     }
   }
@@ -1282,7 +1283,13 @@ sub _user_track_settings {
   elsif ($style =~ /^(wiggle|WIG)$/) {
     $strand         = 'r';
     @user_renderers = ('off', 'Off', 'tiling', 'Wiggle plot');
-  } else {
+  }
+  elsif (uc $format =~ /BED/) {
+    $strand = 'b';
+    @user_renderers = @{$self->{'alignment_renderers'}};
+    splice @user_renderers, 6, 0, 'as_transcript_nolabel', 'Structure', 'as_transcript_label', 'Structure with labels';
+  }
+  else {
     $strand         = (uc($format) eq 'VEP_INPUT' || uc($format) eq 'VCF') ? 'f' : 'b';
     @user_renderers = (@{$self->{'alignment_renderers'}}, 'difference', 'Differences');
   }
@@ -1883,7 +1890,7 @@ sub _merge {
     next if exists $sub_tree->{'web'}{$sub_type}{'do_not_display'};
     
     my $key = $sub_tree->{'web'}{'key'} || $analysis;
-    
+
     foreach (grep $_ ne 'desc', keys %{$sub_tree->{'web'} || {}}) {
       if ($_ eq 'default') {
         $data->{$key}{'display'} ||= ref $sub_tree->{'web'}{$_} eq 'HASH' ? $sub_tree->{'web'}{$_}{$config_name} : $sub_tree->{'web'}{$_};
@@ -2052,7 +2059,7 @@ sub add_das_tracks {
 sub add_dna_align_features {
   my ($self, $key, $hashref) = @_;
   
-  return unless $self->get_node('dna_align_cdna');
+  return unless $self->get_node('dna_align_cdna') || $key eq 'rnaseq';
   
   my ($keys, $data) = $self->_merge($hashref->{'dna_align_feature'}, 'dna_align_feature');
   
@@ -2113,13 +2120,12 @@ sub add_data_files {
   
   foreach (@$keys) {
     my $glyphset = $data->{$_}{'format'} || '_alignment';
-    $glyphset = 'bam_and_bigwig' if $glyphset eq 'bam';
 
     my $renderers;
-    if ($glyphset eq 'bam_and_bigwig') {
+    if ($glyphset eq 'bamcov') {
       $renderers = [
                     'off',       'Off',
-                    'tiling', 'Coverage (BigWig)',
+                    'tiling',    'Coverage (BigWig)',
                     'normal',    'Normal',
                     'unlimited', 'Unlimited',
                     ];
@@ -2645,7 +2651,7 @@ sub add_alignments {
       } else {
         $type        = ucfirst lc $row->{'type'};
         $type        =~ s/\W/ /g;
-        $menu_key    = 'pairwise_align';
+        $menu_key    = 'pairwise_other';
         $description = 'Pairwise alignments';
       }
       
@@ -3059,11 +3065,38 @@ sub add_sequence_variations_meta {
      $regexp_suffix_caption =~ s/\(/\\\(/;
      $regexp_suffix_caption =~ s/\)/\\\)/;
 
-  foreach my $menu_item (sort {$a->{type} cmp $b->{type} || $a->{parent} cmp $b->{parent} || $a->{'long_name'} !~ /all /i cmp $b->{'long_name'} !~ /all /i} @{$hashref->{'menu'}}) {
+  my @menus;
+  foreach my $menu_item (@{$hashref->{'menu'}}) {
     next if $menu_item->{'type'} =~  /^sv_/; # exclude structural variant items
-    
+
+    $menu_item->{order} = 5; # Default value
+
+    if ($menu_item->{type} =~ /menu/) {
+      if ($menu_item->{'long_name'} =~ /^sequence variants/i){
+        $menu_item->{order} = 1;
+      }
+      elsif ($menu_item->{'long_name'} =~ /phenotype/i) {
+        $menu_item->{order} = 2;
+      }
+    }
+    else {
+      if ($menu_item->{'long_name'} =~ /clinvar/i) {
+        $menu_item->{order} = ($menu_item->{'long_name'} =~ /all /i) ? 1 : 2;
+      }
+      elsif ($menu_item->{'long_name'} =~ /all /i) {
+        $menu_item->{order} = 3;
+      }
+      elsif ($menu_item->{'long_name'} =~ /dbsnp/i) {
+        $menu_item->{order} = 4;
+      }
+    }
+    push(@menus, $menu_item);
+  }
+  foreach my $menu_item (sort {$a->{type} cmp $b->{type} || $a->{parent} cmp $b->{parent} || 
+                               $a->{order} <=> $b->{order} || $a->{'long_name'} cmp $b->{'long_name'}
+                              } @menus) {
     my $node;
-    
+
     if ($menu_item->{'type'} eq 'menu' || $menu_item->{'type'} eq 'menu_sub') { # just a named submenu
       $node = $self->create_submenu($menu_item->{'key'}, $menu_item->{'long_name'});
     } elsif ($menu_item->{'type'} eq 'source') { # source type
@@ -3101,7 +3134,8 @@ sub add_sequence_variations_meta {
     }
     
     # get the node onto which we're going to add this item, then append it
-    if ($menu_item->{'long_name'} =~ /^all/i || $menu_item->{'long_name'} =~ /^sequence variants/i) {
+#    if ($menu_item->{'long_name'} =~ /^all/i || $menu_item->{'long_name'} =~ /^sequence variants/i) {
+    if ($menu_item->{'long_name'} =~ /^sequence variants/i) {
       ($self->get_node($menu_item->{'parent'}) || $menu)->prepend($node) if $node;
     }
     else {
@@ -3126,7 +3160,7 @@ sub add_sequence_variations_default {
     description => 'Sequence variants from all sources',
   }));
 
-  foreach my $key_2 (sort keys %{$hashref->{'source'}{'counts'} || {}}) {
+  foreach my $key_2 (sort{$a !~ /dbsnp/i cmp $b !~ /dbsnp/i} keys %{$hashref->{'source'}{'counts'} || {}}) {
     next unless $hashref->{'source'}{'counts'}{$key_2} > 0;
     next if     $hashref->{'source'}{'somatic'}{$key_2} == 1;
     
@@ -3219,17 +3253,17 @@ sub add_phenotypes {
     renderers  => [ 'off', 'Off', 'gene_nolabel', 'Expanded', 'compact', 'Compact' ],
   );
 
-  $pf_menu->append($self->create_track('phenotype_all', 'Phenotype annotations (all types)', {
-    %options,
-    caption => 'Phenotypes',
-    type => undef,
-    description => 'Phenotype annotations on '.(join ", ", map {$_.'s'} keys %{$hashref->{'phenotypes'}{'types'}}),
-  }));
+#  $pf_menu->append($self->create_track('phenotype_all', 'Phenotype annotations (all types)', {
+#    %options,
+#    caption => 'Phenotypes',
+#    type => undef,
+#    description => 'Phenotype annotations on '.(join ", ", map {$_.'s'} keys %{$hashref->{'phenotypes'}{'types'}}),
+#  }));
  
-  foreach my $type( sort {$a cmp $b} keys %{$hashref->{'phenotypes'}{'types'}}) {
+  foreach my $type( sort {$a cmp $b} keys %{$hashref->{'phenotypes'}{'types'}}) {  
     next unless ref $hashref->{'phenotypes'}{'types'}{$type} eq 'HASH';
     my $pf_sources = $hashref->{'phenotypes'}{'types'}{$type}{'sources'};
-    $pf_menu->append($self->create_track('phenotype_'.lc($type), 'Phenotype annotations ('.$type.'s)', {
+    $pf_menu->prepend($self->create_track('phenotype_'.lc($type), 'Phenotype annotations ('.$type.'s)', {
       %options,
       caption => 'Phenotypes ('.$type.'s)',
       type => $type,
@@ -3237,6 +3271,12 @@ sub add_phenotypes {
     }));
   }
 
+  $pf_menu->prepend($self->create_track('phenotype_all', 'Phenotype annotations (all types)', {
+    %options,
+    caption => 'Phenotypes',
+    type => undef,
+    description => 'Phenotype annotations on '.(join ", ", map {$_.'s'} keys %{$hashref->{'phenotypes'}{'types'}}),
+  }));
   $p_menu->append($pf_menu);
 }
 

@@ -47,7 +47,7 @@ sub get_details {
 
   return (undef, '<strong>Gene is not in a compara tree</strong>') unless $tree;
 
-  my $node = $tree->get_all_nodes;
+  my $node = $tree->root->get_all_nodes;
   return (undef, '<strong>Gene is not in the compara tree</strong>') unless $node;
   
   return ($member, $tree, $node);
@@ -78,7 +78,7 @@ sub content {
   my @highlights     = $species_name;
   return $tree if $hub->param('g') && !$is_speciestree && !defined $member;  
   
-  my $leaves               = $tree->get_all_leaves;  
+  my $leaves               = $tree->root->get_all_leaves;  
   my $image_config         = $hub->get_imageconfig('speciestreeview');
   
   my $image_width          = $self->image_width || 800;
@@ -92,7 +92,7 @@ sub content {
     cdb             => $cdb
   });
 
-  my $image = $self->new_image($tree, $image_config, \@highlights);
+  my $image = $self->new_image($tree->root, $image_config, \@highlights);
 
   return $html if $self->_export_image($image, 'no_text');
 

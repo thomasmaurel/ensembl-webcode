@@ -45,11 +45,10 @@ sub create_form {
     'FASTA' => 'FASTA',
   };
 
-  my $form_url  = sprintf('/%s/DataExport/Output', $hub->species);
-  my $form      = $self->new_form({'id' => 'export', 'action' => $form_url, 'method' => 'post'});
+  my $form = $self->new_form({'id' => 'export', 'action' => $hub->url({'action' => 'Output',  'function' => '', '__clear' => 1}), 'method' => 'post'});
 
   ## Generic fields
-  my $fieldset  = $form->add_fieldset; 
+  my $fieldset = $form->add_fieldset;
 
   my $filename = $hub->param('filename') || $self->default_file_name;
   $filename =~ s/\.[\w|\.]+//;
@@ -233,7 +232,11 @@ sub create_form {
     $tutorial_fieldset->add_notes($html);
   }
 
-  return $form;
+  return $self->dom->create_element('div', {
+    'id'        => 'DataExport',
+    'class'     => 'js_panel',
+    'children'  => [ {'node_name' => 'input', 'class' => 'subpanel_type', 'value' => 'DataExport', 'type' => 'hidden' }, $form ]
+  });
 }
 
 sub default_file_name { 

@@ -47,16 +47,18 @@
       $.each(raw_input,function(a,b) { input.push([a,b]); });
       d = $.Deferred().resolve(input);
       var output = [];
-      for(var i=0;i<input.length;i+=group) {
-        d = beat(d.then(function(j) {
-          for(j=0;j<group && i+j<input.length;j++) {
-            var c = fn(input[i+j][0],input[i+j][1]);
-            if(c !== undefined) {
-              output.push(c);
+      for(var ii=0;ii<input.length;ii+=group) {
+        (function(i) {
+          d = beat(d.then(function(j) {
+            for(j=0;j<group && i+j<input.length;j++) {
+              var c = fn(input[i+j][0],input[i+j][1]);
+              if(c !== undefined) {
+                output.push(c);
+              }
             }
-          }
-          return $.Deferred().resolve(output);
-        }));
+            return $.Deferred().resolve(output);
+          }));
+        })(ii);
       }
       return d;
     });
@@ -183,7 +185,7 @@
   }
 
   function add_legend($outer,legend,loading) {
-    var $key = $outer.parents('.js_panel').find('.adornment-key');
+    var $key = $outer.parents('.js_panel').find('._adornment_key');
     // Add new legend to data
     var data = $key.data('data');
     if(!data) { data = {}; }
@@ -244,10 +246,9 @@
       });
     }
     var html = '';
-    if(key || messages) { html += '<h4>Key:</h4>'; }
     if(key) { html += '<dl>' + key +'</dl>'; }
     if(messages) { html += '<ul>' + messages + '</ul>'; }
-    $key.html(html);
+    $key.html(html).toggle(!!html);
   }
 
   function _do_adorn(outer,fixups,data) {

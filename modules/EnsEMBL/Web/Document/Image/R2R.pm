@@ -53,7 +53,7 @@ sub find_ss_in_compara {
     my $gma = $database->get_GeneMemberAdaptor();
     my $gta = $database->get_GeneTreeAdaptor();
 
-    my $member = $gma->fetch_by_source_stable_id(undef, $self->component->object->stable_id);
+    my $member = $gma->fetch_by_stable_id($self->component->object->stable_id);
     if ($member and $member->has_GeneTree) {
       my $transcript = $member->get_canonical_SeqMember();
       my $gene_tree  = $gta->fetch_default_for_Member($member);
@@ -127,13 +127,12 @@ sub _create_svg {
     my ($self, $aln_file, $peptide_id, $model_name, $with_consensus_structure) = @_;
 
     ## Path to the files we dumped earlier
-    my $path    = $aln_file->base_read_path;
     my $sub_dir = 'r2r_'.$self->hub->species;
+    my $path    = $aln_file->base_read_path.'/'.$sub_dir;
 
-    my $sub_dir = 'r2r_'.$self->hub->species;
     my $cons_filename  = $model_name.'.cons';
     ## For information about these options, check http://breaker.research.yale.edu/R2R/R2R-manual-1.0.3.pdf
-    $self->_run_r2r_and_check("--GSC-weighted-consensus", $aln_file->write_location, $path, $cons_filename, "3 0.97 0.9 0.75 4 0.97 0.9 0.75 0.5 0.1");
+    $self->_run_r2r_and_check("--GSC-weighted-consensus", $aln_file->absolute_write_path, $path, $cons_filename, "3 0.97 0.9 0.75 4 0.97 0.9 0.75 0.5 0.1");
 
     my $thumbnail = $model_name.'_thumbnail.svg';
 
@@ -161,7 +160,7 @@ sub _create_svg {
         my $th_content = "$path/$cons_filename\tskeleton-with-pairbonds\n";
         $th_meta->write($th_content);
       }
-      $self->_run_r2r_and_check("", $th_meta->write_location, $path, $thumbnail, "");
+      $self->_run_r2r_and_check("", $th_meta->absolute_write_path, $path, $thumbnail, "");
     }
 
     my $plot = $model_name.'.svg';
@@ -190,14 +189,14 @@ sub _create_svg {
 
       unless ($plot_meta->exists) {
         my $content = $with_consensus_structure ? "$path/$cons_filename\n" : '';
-        $content .= $aln_file->read_location."\toneseq\t$peptide_id\n";
+        $content .= $aln_file->absolute_read_path."\toneseq\t$peptide_id\n";
         $plot_meta->write($content);
       }
 
-      $self->_run_r2r_and_check("", $plot_meta->read_location, $path, $plot, "");
+      $self->_run_r2r_and_check("", $plot_meta->absolute_read_path, $path, $plot, "");
     }
 
-    return ($th_file->read_location, $plot_file->read_location);
+    return ($th_file->absolute_read_path, $plot_file->absolute_read_path);
 }
 
 sub _run_r2r_and_check {

@@ -34,13 +34,23 @@ use EnsEMBL::Web::File::Utils::Memcached qw/:all/;
 ### Data can be written to disk or, if enabled and appropriate, memcached
 ### Note that to aid cleanup, all files written to disk should use a common
 ### path pattern, as follows:
-### /base_dir/datestamp/user_identifier/sub_dir/file_name.ext
-###  - base_dir is set in subclasses - this is the main temporary file location
+### base_dir/subcategory/datestamp/user_identifier/sub_dir/file_name.ext
+###  - base_dir can be set in subclasses - this is the main temporary file location
+###    N.B. we store a key to the path_map and look up the absolute path only when
+###    needed, so as to avoid exposing URLs to the user
+###  - base_extra is an optional directory (or directories) - mainly included for
+###    backwards compatibility with the Tools code
 ###  - datestamp aids in cleaning up older files by date
 ###  - user_identifier is either session id or user id, and 
 ###    helps to ensure that users only see their own data
 ###  - sub_dir is optional - it's used by a few pages to separate content further
 ###  - file_name may be auto-generated, or set by the user
+
+our %path_map = (
+                'user'  => ['ENSEMBL_TMP_DIR', 'ENSEMBL_TMP_URL'],
+                'image' => ['ENSEMBL_TMP_DIR_IMG', 'ENSEMBL_TMP_URL_IMG'],
+                'tools' => ['ENSEMBL_TMP_DIR_TOOLS'],
+                );
 
 sub new {
 ### @constructor
@@ -56,15 +66,25 @@ sub new {
   my ($class, %args) = @_;
   #use Carp qw(cluck); cluck 'CREATING NEW FILE OBJECT';
   #warn '!!! CREATING NEW FILE OBJECT';
-  #while (my($k, $v) = each(%args)) {
-  #warn "@@@ ARG $k = $v";
+  #foreach (sort keys %args) {
+  #  warn "@@@ ARG $_ = ".$args{$_};
   #}
-  my $hub = $args{'hub'};
-  my $input_drivers = ($args{'file'} && $args{'file'} =~ /^[http|ftp]/) ? ['URL'] : ['IO'];
+
+  my $input_drivers = ['IO'];
+  my $absolute = 0;
+  if ($args{'file'} && $args{'file'} =~ /^[http|ftp]/) {
+    $absolute = 1;
+    $input_drivers = ['URL'];
+  }
+  elsif ($args{'upload'}) {
+    $absolute = 1;
+  }
+
   my $self = {
               'hub'             => $args{'hub'},
-              'base_dir'        => $args{'base_dir'} || $hub->species_defs->ENSEMBL_TMP_DIR,
-              'base_url'        => $args{'base_url'} || $hub->species_defs->ENSEMBL_TMP_URL,
+              'absolute'        => $absolute,
+              'base_dir'        => $args{'base_dir'} || 'user',
+              'base_extra'      => $args{'base_extra'},
               'input_drivers'   => $args{'input_drivers'} || $input_drivers, 
               'output_drivers'  => $args{'output_drivers'} || ['IO'], 
               'error'           => undef,
@@ -72,6 +92,14 @@ sub new {
 
   bless $self, $class;
 
+  ## Option to create an "empty" object with minimal information 
+  $self->init(%args) unless $args{'empty'};
+
+  return $self;
+}
+
+sub init {
+  my ($self, %args) = @_;
   my $read_path = $args{'file'};
   my $bare_name;
 
@@ -82,10 +110,6 @@ sub new {
     ## Clean up the path before processing further
     $read_path  =~ s/^\s+//;
     $read_path  =~ s/\s+$//;
-    my $tmp     = $self->{'hub'}->species_defs->ENSEMBL_TMP_DIR;
-    $read_path  =~ s/$tmp//;
-    $tmp        = $self->{'hub'}->species_defs->ENSEMBL_TMP_URL;
-    $read_path  =~ s/$tmp//;
 
     my $read_name;
     if ($args{'upload'} && $args{'upload'} eq 'cgi') {
@@ -95,7 +119,7 @@ sub new {
       ## Backwards compatibility with previously uploaded TmpFile paths
       ## TODO Remove if block, once TmpFile modules are removed
       if ($args{'prefix'}) {
-        $self->{'read_location'} = join('/', $self->{'base_dir'}, $args{'prefix'}, $read_path);
+        $self->{'read_location'} = join('/', $args{'prefix'}, $read_path);
         $read_name = $read_path;
       }
       else {
@@ -171,17 +195,19 @@ sub new {
     my @path_elements = ($datestamp, $user_id);
     push @path_elements, $sub_dir if $sub_dir;
     push @path_elements, $self->{'write_name'};
+    unshift @path_elements, $args{'base_extra'} if $args{'base_extra'};
 
-    $self->{'write_location'} = join('/', $self->{'base_dir'}, @path_elements); 
-    $self->{'write_url'}      = join('/', $self->{'base_url'}, @path_elements); 
+    $self->{'write_location'} = join('/', @path_elements); 
   } 
+
+  ## Is this a temporary or "saved" file?
+  $self->{'status'} = $args{'status'};
 
   #warn ">>> FILE OBJECT:";
   #while (my($k, $v) = each (%$self)) {
   #  warn "... SET $k = $v";
   #}
 
-  return $self;
 }
 
 sub read_name {
@@ -241,6 +267,8 @@ sub compress {
 
 sub read_location {
 ### a
+### Relative path to directory we want to read from
+### N.B. Use this method anywhere that URLs might be exposed to the browser
 ### Assume that we read back from the same file we wrote to
 ### unless read parameters were set separately
   my $self = shift;
@@ -249,34 +277,89 @@ sub read_location {
 
 sub write_location {
 ### a
+### Relative path to directory we want to write to 
+### N.B. Use this method anywhere that URLs might be exposed to the browser
 ### Assume that we write back to the same file unless 
 ### write parameters have been set
   my $self = shift;
   return $self->{'write_location'} || $self->{'read_location'};
 }
 
+sub base_read_path {
+### a
+### Full standard path to file, omitting file-specific subdirectory
+  my $self = shift;
+  my $dir_key = $path_map{$self->{'base_dir'}}->[0];
+  return join('/', $self->hub->species_defs->$dir_key, $self->get_datestamp, $self->get_user_identifier);
+}
+
+sub absolute_read_path {
+### a
+### Absolute path to a file we want to read from
+### IMPORTANT: For local files, do not use this value anywhere that might be exposed to the browser!
+  my $self = shift;
+  if ($self->{'absolute'}) {
+    return $self->read_location;
+  }
+  else {
+    my $dir_key = $path_map{$self->{'base_dir'}}->[0];
+    my $absolute_path = $self->hub->species_defs->$dir_key;
+    return join('/', $absolute_path, $self->read_location);
+  }
+}
+
+sub absolute_write_path {
+### a
+### Absolute path to a file we want to write to
+### IMPORTANT: Do not use this value anywhere that might be exposed to the browser!
+  my $self = shift;
+  my $dir_key = $path_map{$self->{'base_dir'}}->[0];
+  my $absolute_path = $self->hub->species_defs->$dir_key;
+  return join('/', $absolute_path, $self->write_location);
+}
+
 sub read_url {
 ### a
+### Absolute path to a file we want to read from
+### IMPORTANT: Do not use this value anywhere that might be exposed to the browser!
 ### Assume that we read back from the same file we wrote to
 ### unless read parameters were set separately
   my $self = shift;
-  return $self->{'read_url'} || $self->{'write_url'};
+  if ($self->{'absolute'}) {
+    return $self->read_location;
+  }
+  else {
+    my $dir_key = $path_map{$self->{'base_dir'}}->[1];
+    my $base_url = $self->hub->species_defs->$dir_key;
+    return join('/', $base_url, $self->read_location);
+  }
 }
 
 sub write_url {
 ### a
+### Absolute path to a file we want to write to 
+### IMPORTANT: Do not use this value anywhere that might be exposed to the browser!
 ### Assume that we write back to the same file unless 
 ### write parameters have been set
 ### N.B. whilst we don't literally write to a url, memcached
 ### uses this method to create a virtual path to a saved file
   my $self = shift;
-  return $self->{'write_url'} || $self->{'read_url'};
+  my $dir_key = $path_map{$self->{'base_dir'}}->[1];
+  my $base_url = $self->hub->species_defs->$dir_key;
+  return join('/', $base_url, $self->write_location);
 }
 
 sub hub {
 ### a
   my $self = shift;
   return $self->{'hub'};
+}
+
+sub code {
+### a
+### Session code for fetching this file
+  my $self = shift;
+  return $self->{'code'};
 }
 
 sub error {
@@ -312,6 +395,12 @@ sub set_datestamp {
   return $self->{'read_datestamp'};
 }
 
+sub get_datestamp {
+  ### a
+  my $self = shift;
+  return $self->{'read_datestamp'};
+}
+
 sub set_user_identifier {
   ### a
   my $self = shift;
@@ -327,6 +416,11 @@ sub set_user_identifier {
   return $self->{'user_identifier'};
 }
 
+sub get_user_identifier {
+  ### a
+  my $self = shift;
+  return $self->{'user_identifier'};
+}
 
 sub md5 {
   my ($self, $content) = @_;
@@ -392,7 +486,8 @@ sub fetch {
 sub read {
 ### Get entire content of file, uncompressed
 ### @return Hashref 
-  my $self = shift;
+  my ($self, $mode) = @_;
+  $mode ||= 'read_file';
 
   ## Don't access source again if we've already fetched the contents
   my $content = $self->{'content'};
@@ -400,7 +495,7 @@ sub read {
 
   my $result = {};
   foreach (@{$self->{'input_drivers'}}) {
-    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::read_file'; 
+    my $method = 'EnsEMBL::Web::File::Utils::'.$_.'::'.$mode; 
     my $args = {
                 'hub'   => $self->hub,
                 'nice'  => 1,
@@ -413,6 +508,13 @@ sub read {
     last if $result->{'content'};
   }
   return $result;
+}
+
+sub read_lines {
+### Get entire content of file, uncompressed and in an arrayref
+### @return Hashref 
+  my $self = shift;
+  return $self->read('read_lines');
 }
 
 sub write {

@@ -53,7 +53,7 @@ sub chase_redirects {
 ###                     max_follow (optional) Integer - maximum number of redirects to follow
 ### @return url (String) or Hashref containing errors (ArrayRef)
   my ($file, $args) = @_;
-  my $url = ref($file) ? $file->read_url : $file;
+  my $url = ref($file) ? $file->read_location : $file;
 
   $args->{'max_follow'} = 10 unless defined $args->{'max_follow'};
 
@@ -96,7 +96,7 @@ sub file_exists {
 ###         no_exception (optional) Boolean
 ### @return Hashref (nice mode) or Boolean 
   my ($file, $args) = @_;
-  my $url = ref($file) ? $file->read_location : $file;
+  my $url = ref($file) ? $file->absolute_read_path : $file;
 
   my ($success, $error);
 
@@ -147,7 +147,7 @@ sub read_file {
 ###         compression String (optional) - compression type
 ### @return Hashref (in nice mode) or String - contents of file
   my ($file, $args) = @_;
-  my $url = ref($file) ? $file->read_location : $file;
+  my $url = ref($file) ? $file->absolute_read_path : $file;
 
   my ($content, $error);
 
@@ -156,7 +156,7 @@ sub read_file {
     $ua->timeout(10);
     $ua->env_proxy;
     $ua->proxy([qw(http https)], $args->{'hub'}->species_defs->ENSEMBL_WWW_PROXY) || ();
-    my $response = $ua->get($url);
+    my $response = $ua->get($url, %{$args->{'headers'}});
     if ($response->is_success) {
       $content = $response->content;
     }
@@ -172,13 +172,13 @@ sub read_file {
     }
     my $http = HTTP::Tiny->new(%params);
 
-    my $response = $http->request('GET', $url);
+    my $response = $http->request('GET', $url, $args->{'headers'});
     if ($response->{'success'}) {
       $content = $response->{'content'};
     }
     else {
-      warn "!!! ERROR FETCHING FILE $url";
       $error = _get_http_tiny_error($response);
+      warn "!!! ERROR FETCHING FILE $url: $error";
     }
   }
 
@@ -249,11 +249,12 @@ sub get_headers {
 ###         compression String (optional) - compression type
 ### @return Hashref containing results (single header or hashref of headers) or errors (ArrayRef)
   my ($file, $args) = @_;
-  my $url = ref($file) ? $file->location : $file;
+  my $url = ref($file) ? $file->absolute_read_path : $file;
   my ($all_headers, $result, $error);
 
   if ($url =~ /^ftp/) {
-    ## TODO - support FTP!
+    ## TODO - support FTP properly!
+    return {'Content-Type' => 1};
   }
   else {
     my %params = ('timeout'       => 10);

@@ -35,7 +35,7 @@ use CGI;
 use URI::Escape qw(uri_escape uri_unescape);
 use HTML::Entities qw(encode_entities);
 
-use EnsEMBL::Draw::ColourMap;
+use EnsEMBL::Draw::Utils::ColourMap;
 
 use EnsEMBL::Web::Cache;
 use EnsEMBL::Web::Cookie;
@@ -131,7 +131,7 @@ sub config_adaptor { return $_[0]{'_config_adaptor'} ||= EnsEMBL::Web::DBSQL::Co
 
 sub timer_push        { return ref $_[0]->timer eq 'EnsEMBL::Web::Timer' ? shift->timer->push(@_) : undef;    }
 sub referer           { return $_[0]{'referer'}   ||= $_[0]->parse_referer;                                  }
-sub colourmap         { return $_[0]{'colourmap'} ||= EnsEMBL::Draw::ColourMap->new($_[0]->species_defs);      }
+sub colourmap         { return $_[0]{'colourmap'} ||= EnsEMBL::Draw::Utils::ColourMap->new($_[0]->species_defs);      }
 sub is_ajax_request   { return $_[0]{'is_ajax'}   //= $_[0]{'_apache_handle'}->headers_in->{'X-Requested-With'} eq 'XMLHttpRequest'; }
 
 sub species_path      { return shift->species_defs->species_path(@_);       }
@@ -620,7 +620,7 @@ sub get_ExtURL_link {
 
 sub get_ext_seq {
   ## Uses PFETCH etc to get description and sequence of an external record
-  ## @param Extrenal DB type (has to match ENSEMBL_EXTERNAL_DATABASES variable in SiteDefs)
+  ## @param External DB type (has to match ENSEMBL_EXTERNAL_DATABASES variable in SiteDefs)
   ## @param Hashref with keys to be passed to get_sequence method of the required indexer (see EnsEMBL::Web::ExtIndex subclasses)
   ## @return Hashref (or possibly a list of similar hashrefs for multiple sequences) with keys:
   ##  - id        Stable ID of the object

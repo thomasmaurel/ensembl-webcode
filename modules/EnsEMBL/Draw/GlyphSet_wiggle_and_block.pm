@@ -413,8 +413,8 @@ sub draw_wiggle_points {
   my $zero      = $top_offset + $zero_offset;
   
   foreach my $f (@$features) {
-    my ($start, $end, $score, $min_score, $height, $width, $x);
-    my $href        = ref $f ne 'HASH' && $f->can('id') ? $hrefs->{$f->id} : '';
+    my ($start, $end, $score, $min_score, $height, $width, $x, $y);
+    my $href        = ref $f ne 'HASH' && $f->can('display_id') ? $hrefs->{$f->display_id} : '';
     my $this_colour = $colour;
     
     if ($parameters->{'use_feature_colours'} && $f->can('external_data')) {
@@ -450,22 +450,29 @@ sub draw_wiggle_points {
     
     foreach ([ $score, $this_colour ], $min_score ? [ $min_score, 'steelblue' ] : ()) {
       $height = ($max_score ? min($_->[0], $max_score) : $_->[0]) * $pix_per_score;
-      
+      $y      = $zero - max($height, 0);
+      $height = $points ? 0 : abs $height;
+
       $self->push($self->Rect({
-        y         => $zero - max($height, 0),
-        height    => $points ? 0 : abs $height,
+        y         => $y,
+        height    => $height,
         x         => $x,
         width     => $width,
         absolutey => 1,
         colour    => $_->[1],
+        alpha     => $parameters->{'use_alpha'} ? 0.5 : 0,
         title     => $parameters->{'no_titles'} ? undef : sprintf('%.2f', $_->[0]),
         href      => $href,
       }));
     }
+
+    # If 'bumped' flag is on, this bumping is different than bumping on other tracks since this one only adds
+    # an offset to the y coords to the next rectangle to be drawn so it doesn't overlap with the previous one
+    $zero -= $height + 2 if $parameters->{'bumped'};
   }
 
   return 1;
-} 
+}
 
 sub draw_wiggle_points_as_line {
   my ($self, $features, $slice, $parameters, $top_offset, $pix_per_score, $colour, $zero_offset) = @_;

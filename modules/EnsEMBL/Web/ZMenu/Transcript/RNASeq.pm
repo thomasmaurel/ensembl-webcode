@@ -48,7 +48,7 @@ sub content {
       type     => 'Transcript',
       action   => 'SupportingEvidence',
       }),
-    position => 2,
+    position => 1,
   });
 
   # add new entries for attributes

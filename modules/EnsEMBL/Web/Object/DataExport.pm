@@ -80,8 +80,8 @@ sub handle_download {
   my $hub = $self->hub;
 
   my $filename    = $hub->param('filename');
-  my $path        = $hub->param('path');
   my $format      = $hub->param('format');
+  my $path        = $hub->param('file');
   my $compression = $hub->param('compression');
   
   ## Strip double dots to prevent downloading of files outside tmp directory
@@ -121,6 +121,7 @@ sub handle_download {
   }
 
   if ($error) {
+    warn ">>> DOWNLOAD ERROR: @$error";
   }
 }
 

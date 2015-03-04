@@ -39,6 +39,7 @@ Ensembl.Panel.TextSequence = Ensembl.Panel.Content.extend({
         var $outer = $(outer);
         panel.initPopups($outer);
         panel.updateKey($outer);
+        panel.fixKey($outer);
         if(!$('.ajax_pending',this.el).length &&
             !$('.ajax_load',this.el).length &&
             !$('.sequence_key img',this.el).length) {
@@ -80,6 +81,10 @@ Ensembl.Panel.TextSequence = Ensembl.Panel.Content.extend({
     $key.data('url',url);
   },
 
+  fixKey: function(el) {
+    el.parents('.js_panel').find('._adornment_key').first().keepOnPage({marginTop: 10, spaced: true}).keepOnPage('trigger');
+  },
+
   requestKey: function(el) {
     var $key = el.parents('.js_panel').find('.sequence_key');
     if(!$key.length) { return; }
@@ -100,6 +105,6 @@ Ensembl.Panel.TextSequence = Ensembl.Panel.Content.extend({
   },
   
   makeZMenu: function (e, el) {
-    Ensembl.EventManager.trigger('makeZMenu', el.data('menuId'), { event: e, area: { a: el } });
+    Ensembl.EventManager.trigger('makeZMenu', el.data('menuId'), { event: e, area: { link: el } });
   }
 });

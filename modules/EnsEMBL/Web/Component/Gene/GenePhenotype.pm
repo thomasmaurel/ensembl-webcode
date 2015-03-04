@@ -72,12 +72,12 @@ sub gene_phenotypes {
           $source = $hub->get_ExtURL_link($source, $source, { ID => $ext_id, TAX => $tax});
         }
         my $locs = sprintf(
-            '<a href="%s">View on Karyotype</a>',
+            '<a href="%s" class="karyotype_link">View on Karyotype</a>',
             $hub->url({
               type    => 'Phenotype',
               action  => 'Locations',
               ph      => $pf->phenotype->dbID
-             })
+             }),
         );
         # display one row for phenotype associated with male and female strain
         my $pf_id = $pf->id;
@@ -107,12 +107,12 @@ sub gene_phenotypes {
         }
         
         my $locs = sprintf(
-          '<a href="%s">View on Karyotype</a>',
+          '<a href="%s" class="karyotype_link">View on Karyotype</a>',
           $hub->url({
             type    => 'Phenotype',
             action  => 'Locations',
             ph      => $pf->phenotype->dbID
-          })
+          }),
         );
       
         push @rows, { source => $source, phenotype => $phen, locations =>  $locs};
@@ -125,15 +125,15 @@ sub gene_phenotypes {
 	    $html .= $self->new_table([
         { key => 'phenotype', align => 'left', title => 'Phenotype' },
         { key => 'source',    align => 'left', title => 'Source'    },
+        { key => 'locations', align => 'left', title => 'Genomic Locations' },
         { key => 'strain',    align => 'left', title => 'Strain'    },
         { key => 'allele',    align => 'left', title => 'Allele'    },
-        { key => 'locations', align => 'left', title => 'Locations' },
       ], \@rows, { data_table => 'no_sort no_col_toggle', exportable => 1 })->render;
     } else {  
       $html .= $self->new_table([ 
         { key => 'phenotype', align => 'left', title => 'Phenotype'     },
         { key => 'source',    align => 'left', title => 'Source'        },
-        { key => 'locations', align => 'left', title => 'Locations'     },
+        { key => 'locations', align => 'left', title => 'Genomic locations'     },
       ], \@rows, { data_table => 'no_sort no_col_toggle', exportable => 1 })->render;
     }
   }

@@ -252,7 +252,7 @@ sub get_alt_allele_link {
   if ($reference) {
     ## Link to Alt Allele page, since there could be several
     $alt_link = sprintf('View <a href="%s">alleles</a> of this gene on alternate assemblies',
-                                  $hub->url({'action' => 'Alleles'}));
+                                  $hub->url({'type' => 'Gene','action' => 'Alleles'}));
   }
   else {
     ## Link to reference gene
@@ -448,7 +448,7 @@ sub get_target_slice {
   #target_species but not target_slice_name_range is defined for pairwise compact alignments. 
   my ($align, $target_species, $target_slice_name_range) = split '--', $align_param;
   my ($target_slice_name, $target_slice_start, $target_slice_end) = $target_slice_name_range ?
-    $target_slice_name_range =~ /(\w+):(\d+)-(\d+)/ : (undef, undef, undef);
+    $target_slice_name_range =~ /([\w\.]+):(\d+)-(\d+)/ : (undef, undef, undef);
 
   #Define target_slice
   if ($target_species && $target_slice_start) {

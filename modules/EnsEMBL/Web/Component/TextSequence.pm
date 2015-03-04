@@ -26,7 +26,7 @@ use EnsEMBL::Web::Fake;
 use EnsEMBL::Web::Utils::RandomString qw(random_string);
 use HTML::Entities        qw(encode_entities);
 
-use Sanger::Graphics::ColourMap;
+use EnsEMBL::Draw::Utils::ColourMap;
 
 use base qw(EnsEMBL::Web::Component::Shared);
 
@@ -517,6 +517,7 @@ sub markup_exons {
     exon1   => 'e1',
     exon2   => 'e2',
     eu      => 'eu',
+    intron  => 'ei',
     other   => 'eo',
     gene    => 'eg',
     compara => 'e2',
@@ -1151,7 +1152,7 @@ sub build_sequence {
 
   my $key_html = '';
   unless($exclude_key) {
-    $key_html = qq(<div class="adornment-key"></div>);
+    $key_html = qq(<div class="_adornment_key adornment-key"></div>);
   }
 
   my $id = $self->id;
@@ -1240,6 +1241,7 @@ sub class_to_style {
       ef   => [ $i++, { 'color' => "#$styles->{'SEQ_EXONFLANK'}{'default'}" } ],
       eo   => [ $i++, { 'background-color' => "#$styles->{'SEQ_EXONOTHER'}{'default'}" } ],
       eg   => [ $i++, { 'color' => "#$styles->{'SEQ_EXONGENE'}{'default'}", 'font-weight' => 'bold' } ],
+      ei   => [ $i++, { 'color' => "#$styles->{'SEQ_INTRON'}{'default'}" } ],
       c0   => [ $i++, { 'background-color' => "#$styles->{'SEQ_CODONC0'}{'default'}" } ],
       c1   => [ $i++, { 'background-color' => "#$styles->{'SEQ_CODONC1'}{'default'}" } ],
       cu   => [ $i++, { 'background-color' => "#$styles->{'SEQ_CODONUTR'}{'default'}" } ],
@@ -1265,7 +1267,7 @@ sub class_to_style {
   return $self->{'class_to_style'};
 }
 
-my $cm = Sanger::Graphics::ColourMap->new();
+my $cm = EnsEMBL::Draw::Utils::ColourMap->new();
 
 sub col_to_hex {
   my ($col) = @_;
