@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,8 +62,8 @@ sub content {
   my $html;
 
   foreach (@$entries) {
-    if ($_->{'class'} eq 'disabled') {
-      $html .= qq(<p class="disabled $classes->{$_->{'caption'}}" title="$_->{'title'}">$_->{'caption'}</p>);
+    if (grep {$_ eq 'disabled'} split ' ', $_->{'class'}) {
+      $html .= qq(<p class="$_->{'class'} $classes->{$_->{'caption'}}" title="$_->{'title'}">$_->{'caption'}</p>);
     } else {
       my $rel   = lc $_->{'rel'};
       my $class = join ' ', map $_ || (), $_->{'class'}, $rel eq 'external' ? 'external' : '', $classes->{$_->{'caption'}};
@@ -122,7 +122,7 @@ sub init {
       __clear => 1
     })
   });
-  
+ 
   if ($object && $object->can_export) {
     $self->add_entry({
       caption => 'Export data',
@@ -134,7 +134,7 @@ sub init {
       caption => 'Export data',
       class   => 'disabled',
       url     => undef,
-      title   => 'You cannot export data from this page'
+      title   => 'Generic export has been disabled on this page. Check individual images, tables, etc for download buttons',
     });
   }
   

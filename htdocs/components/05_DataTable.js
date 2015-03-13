@@ -1,5 +1,5 @@
 /*
- * Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+ * Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -214,13 +214,29 @@ Ensembl.DataTable = {
     
     return options;
   },
-  
+
+  buttonText: function(settings) {
+    var columns = settings.aoColumns;
+    var hidden = 0;
+    $.each(columns,function(col) {
+      if(!columns[col].bVisible) {
+        hidden++;
+      }
+    });
+    var hidden_txt = '';
+    if(hidden) {
+      hidden_txt = ' ('+hidden+' hidden)';
+    }
+    return 'Show/hide columns'+hidden_txt;
+  },
+
   columnToggle: function (settings) {
     var panel = this;
     
     var columns    = settings.aoColumns;
     var toggleList = $('<ul class="floating_popup"></ul>');
-    var toggle     = $('<div class="toggle">Show/hide columns</div>').append(toggleList).on('click', function (e) { if (e.target === this) { toggleList.toggle(); } });
+
+    var toggle     = $('<div class="toggle">'+panel.buttonText(settings)+'</div>').append(toggleList).on('click', function (e) { if (e.target === this) { toggleList.toggle(); if(toggleList.is(':hidden')) { toggle.remove(); panel.columnToggle(settings); }  } });
     
     $.each(columns, function (col) {
       var th = $(this.nTh);
@@ -249,7 +265,6 @@ Ensembl.DataTable = {
                 }
               });
             }
-            
             $.each(tables, function () {
               this.fnSetColumnVis(col, visibility);
             });

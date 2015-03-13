@@ -202,9 +202,9 @@ foreach my $sp (@species) {
     unless (exists $das_coords->{$sp}{$coord_type}) {
       # Add to the registry and check it came back OK
       my $tmp = _get_das_coords(_coord_system_as_xml($coord_type, '', $sp, $taxid), $coord_type);
-      if (! $check_registry) {
-	      $tmp->{$sp}{$coord_type} || warn "[FATAL] Unable to create $coord_type $sp coordinates";
-      }
+      #if (! $check_registry) {
+	    #  $tmp->{$sp}{$coord_type} || warn "[FATAL] Unable to create $coord_type $sp coordinates";
+      #}
     }
   }
 }
@@ -235,11 +235,11 @@ foreach my $sp (@species) {
     # Set up the coordinate system details
     $_->[6] ||= ''; # version
     if (!$coords{$_->[5]}{$_->[6]}) {
-	if ($xml) {
-	    my $txml = _coord_system_as_xml(ucfirst($_->[5]), $_->[6], $sp, $taxid), ucfirst($_->[5])." $_->[6]";
-	    $coords{$_->[5]}{$_->[6]} = $txml;
-	    next;
-        }
+	    if ($xml) {
+	      my $txml = _coord_system_as_xml(ucfirst($_->[5]), $_->[6], $sp, $taxid), ucfirst($_->[5])." $_->[6]";
+	      $coords{$_->[5]}{$_->[6]} = $txml;
+	      next;
+      }
       my $cs_xml = $das_coords->{$sp}{$_->[5]}{$_->[6]};
 
 
@@ -250,7 +250,7 @@ foreach my $sp (@species) {
       if (!$cs_xml) {
         # Add to the registry and check it came back OK
         my $tmp = _get_das_coords(_coord_system_as_xml(ucfirst($_->[5]), $_->[6], $sp, $taxid), ucfirst($_->[5])." $_->[6]");
-	next SPECIES if ($check_registry);
+	      next SPECIES if ($check_registry);
         $cs_xml = $tmp->{$sp}{$_->[5]}{$_->[6]};
         if (!$cs_xml) {
           print STDERR "[ERROR] Coordinate system $_->[5] $_->[6] is not in the DAS Registry! Skipping\n";
@@ -494,32 +494,20 @@ sub _get_das_coords {
   $ua->proxy('http', $species_defs->ENSEMBL_WWW_PROXY);
   $ua->no_proxy(@{$species_defs->ENSEMBL_NO_PROXY||[]});
 
-  my $method = $add_data ? 'POST' : 'GET';
+  my $method = 'GET';
   my $req  = HTTP::Request->new($method => 'http://www.dasregistry.org/das/coordinatesystem');
   
-  # If we have XML for a new coordinate system, add it
-  if ($add_data) {
-    if ($check_registry) {
-      print STDERR "[WARN]  Data to be manually added to registry is:\n$add_data\n";			
-      return;
-    }
-    print STDERR "[INFO]  Adding coordinate system '$add_name' to the DAS Registry\n";
-    $add_data = qq(<?xml version='1.0' ?>\n<DASCOORDINATESYSTEM>\n  $add_data\n</DASCOORDINATESYSTEM>);
-    $req->content($add_data);
-    $req->content_length(length $add_data);
-  }
-
   my $resp = $ua->request( $req );
-  unless ($resp->is_success) {
-    warn "Unable to retrieve coordinate system list from the DAS Registry: ".$resp->status_line." : ".$resp->content;
-  }  
 
   my $xml = $resp->content;
   $xml =~ s{^\s*(<\?xml.*?>)?(\s*</?DASCOORDINATESYSTEM>\s*)?}{}mix;
+  $xml =~ s/<\/DASCOORDINATESYSTEM>//g;
   $xml =~ s/\s*$//mx;
-  
+  $xml .= $add_data;
+
   my %coords;
   for (grep { /^\s*<COORDINATES/ } split m{</COORDINATES>}mx, $xml) {
+    next unless $_;
     $_ =~ s/^\s+//;
     my $cs_xml = "$_</COORDINATES>";
     my ($type) = m/source\s*=\s*"(.*?)"/mx;
@@ -542,7 +530,6 @@ sub _get_das_coords {
 }
 
 sub publish_multi_species_sources {
-    return;
 # Now Multi species sources, e.g EnsemblGene Id etc
     my $sp = $species_defs->ENSEMBL_PRIMARY_SPECIES;
 
@@ -638,7 +625,7 @@ Support enquiries: helpdesk@ensembl.org
                                                                                 
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

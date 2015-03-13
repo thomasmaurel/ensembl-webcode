@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,10 +62,10 @@ sub content {
   # First process Ensembl regulatory features
   foreach my $feature (@reg_features){
     my $regulation_obj      = $self->new_object('Regulation', $feature, $object->__data);
-    my $details_url         = $regulation_obj->get_details_page_url;
+    my $summary_url         = $regulation_obj->get_summary_page_url;
     my $feature_id          = $feature->stable_id;
-    my $feature_link        = qq(<a href=$details_url>$feature_id</a>);
-    my $analysis            = qq(<a rel="external" href="/info/docs/funcgen/index.html">Ensembl Regulatory Build</a>);
+    my $feature_link        = qq(<a href=$summary_url>$feature_id</a>);
+    my $analysis            = qq(<a rel="external" href="/info/genome/funcgen/index.html">Ensembl Regulatory Build</a>);
     my $type                = $feature->feature_type->name;
     my ($sequence, $length) = $self->get_sequence($regulation_obj);
 

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,8 @@ use strict;
 
 use base qw(EnsEMBL::Draw::GlyphSet_simple);
 
-sub my_label { return sprintf 'Reg. Features from cell line %s', $_[0]->my_config('cell_line'); }
+sub my_label { return sprintf 'Reg. Features from cell type %s. Select another using button above?', $_[0]->my_config('cell_line'); }
+sub my_empty_label { return sprintf('No Reg. Features from cell type %s. Select another using button above?', $_[0]->my_config('cell_line')); }
 sub class    { return 'group'; }
 
 sub features {
@@ -78,42 +79,90 @@ sub fetch_features {
   return $reg_feats;
 }
 
+sub _check_build_type {
+  my ($self) = @_;
+
+  unless(defined $self->{'new_reg_build'}) {
+    $self->{'new_reg_build'} =
+      $self->{'config'}->hub->is_new_regulation_pipeline;
+  }
+}
+
 sub colour_key {
   my ($self, $f) = @_;
   my $type = $f->feature_type->name;
-  
-  if ($type =~ /Promoter/) {
-    $type = 'Promoter_associated';
-  } elsif ($type =~ /Non/) {
-    $type = 'Non-genic';
-  } elsif ($type =~ /Gene/) {
-    $type = 'Genic';
-  } elsif ($type =~ /Pol/) {
-    $type = 'poliii_associated';
-  } else  {
-    $type = 'Unclassified';
+
+  $self->_check_build_type;
+  if($self->{'new_reg_build'}) {
+    if($type =~ /CTCF/i) {
+      $type = 'ctcf';
+    } elsif($type =~ /Enhancer/i) {
+      $type = 'enhancer';
+    } elsif($type =~ /Open chromatin/i) {
+      $type = 'open_chromatin';
+    } elsif($type =~ /TF binding site/i) {
+      $type = 'tf_binding_site';
+    } elsif($type =~ /Promoter Flanking Region/i) {
+      $type = 'promoter_flanking';
+    } elsif($type =~ /Promoter/i) {
+      $type = 'promoter';
+    } else  {
+      $type = 'Unclassified';
+    }
+  } else {
+    if ($type =~ /Promoter/) {
+      $type = 'Promoter_associated';
+    } elsif ($type =~ /Non/) {
+      $type = 'Non-genic';
+    } elsif ($type =~ /Gene/) {
+      $type = 'Genic';
+    } elsif ($type =~ /Pol/) {
+      $type = 'poliii_associated';
+    } else {
+      $type = 'Unclassified';
+    }
+    $type = 'old_'.$type;
   }
-  
   return lc $type;
 }
 
 sub tag {
   my ($self, $f) = @_;
-  my $colour     = $self->my_colour($self->colour_key($f));
+  my $colour_key = $self->colour_key($f);
+  my $colour     = $self->my_colour($colour_key);
+  my $flank_colour = $colour;
+  if($colour_key eq 'promoter') {
+    $flank_colour = $self->my_colour('promoter_flanking');
+  }
   my @loci       = @{$f->get_underlying_structure};
   my $bound_end  = pop @loci;
   my $end        = pop @loci;
   my ($bound_start, $start, @mf_loci) = @loci;
   my @result;
-  
-  if ($bound_start != $start || $bound_end != $end) {
+ 
+  $self->_check_build_type; 
+  if ($bound_start < $start || $bound_end > $end) {
     # Bound start/ends
-    push @result, {
-      style  => 'fg_ends',
-      colour => $colour,
-      start  => $bound_start,
-      end    => $bound_end
-    };
+    if($self->{'new_reg_build'}) {
+      push @result, {
+        style  => 'rect',
+        colour => $flank_colour,
+        start  => $bound_start,
+        end    => $start
+      },{
+        style  => 'rect',
+        colour => $flank_colour,
+        start  => $end,
+        end    => $bound_end
+      };
+    } else {
+      push @result,{
+        style => 'fg_ends',
+        colour => $colour,
+        start => $bound_start,
+        end => $bound_end
+      };
+    }
   }
   
   # Motif features
@@ -227,5 +276,24 @@ sub export_feature {
     values  => [ $feature->stable_id ]
   });
 }
+
+sub pattern {
+  my ($self,$f) = @_;
+
+  return undef unless $self->{'config'}->hub->is_new_regulation_pipeline;
+  return ['hatch_really_thick','grey90',0] if $f->can('has_evidence') and !$f->has_evidence;
+  return undef;
+}
+
+sub feature_label {
+  my ($self,$f) = @_;
+
+  return undef unless $self->{'config'}->hub->is_new_regulation_pipeline;
+  return undef if $f->can('has_evidence') and $f->has_evidence;
+  return "{grey30}inactive in this cell line";
+}
+
+sub label_overlay { return 1; }
+sub max_label_rows { return $_[0]->my_config('max_label_rows') || 2; }
 
 1;

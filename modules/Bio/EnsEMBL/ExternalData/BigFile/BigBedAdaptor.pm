@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,11 +21,34 @@ use strict;
 
 use List::Util qw(max);
 
-use Data::Dumper;
 use Bio::DB::BigFile;
 use Bio::DB::BigFile::Constants;
 
 use EnsEMBL::Web::Text::Feature::BED;
+
+# Standard BED columns and where to find them: this will need adding to
+#   when we come across various whacky field names.
+my @bed_columns = (
+  ['chrom',0],
+  ['chromStart',1],
+  ['chromEnd',2],
+  ['name'],
+  ['score'],
+  ['strand'],
+  ['thickStart'],
+  ['thickEnd'],
+  ['itemRgb'],
+  ['blockCount',9],
+  ['blockSizes',10],
+  ['chromStarts'],
+);
+
+# colour, age used in AgeOfBase track
+# Reserved used in old Age-of-Base track: delete after e76
+my %global_name_map = (
+  item_colour => ['item_colour','colour','reserved'],
+  score => ['score','age'],
+);
 
 sub new {
   my ($class, $url) = @_;
@@ -48,6 +71,42 @@ sub bigbed_open {
   return $self->{_cache}->{_bigbed_handle};
 }
 
+sub check {
+  my $self = shift;
+
+  my $bb = $self->bigbed_open;
+  return defined $bb;
+}
+
+sub _parse_as {
+  my ($self,$in) = @_;
+
+  my %out;
+  while($in) {
+    next unless $in->isTable;
+    my @table;
+    my $cols = $in->columnList;
+    while($cols) {
+      push @table,[$cols->lowType->name,$cols->name,$cols->comment];
+      $cols = $cols->next;
+    }
+    $out{$in->name} = \@table;
+    $in = $in->next;
+  }
+  return \%out;
+}
+
+sub autosql {
+  my $self = shift;
+
+  unless($self->{'_cache'}->{'_as'}) {
+    my $bb = $self->bigbed_open;
+    return {} unless $bb;
+    my $as = $self->_parse_as($bb->bigBedAs);
+    $self->{'_cache'}->{'_as'} = $as;
+  }
+  return $self->{'_cache'}->{'_as'};
+}
 
 # UCSC prepend 'chr' on human chr ids. These are in some of the BigBed
 # files. This method returns a possibly modified chr_id after
@@ -90,12 +149,112 @@ sub fetch_extended_summary_array  {
   return $summary_e;
 }
 
+sub _as_mapping {
+  my ($self) = @_;
+
+  my $as = $self->autosql;
+  unless($as and %$as) {
+    my %map;
+    $map{$_} = $_ for(0..$#bed_columns);
+    return [\%map,{},[],{}];
+  }
+  my (%name_map,%names,%real_name);
+  my $table = $as->{[keys %$as]->[0]};
+  foreach my $name (map { $_->[1] } @$table) {
+    $names{$name} = 1;
+  }
+  foreach my $k (keys %global_name_map) {
+    foreach my $v (@{$global_name_map{$k}}) {
+      next unless $names{$v};
+      $name_map{$v} = $k;
+      $real_name{$k} = $v;
+      last;
+    }
+  }
+  $real_name{$_} ||= $_ for keys %names;
+  my (%map,%core,@order,%pos);
+  foreach my $idx_bed (0..$#bed_columns) {
+    foreach my $try (@{$bed_columns[$idx_bed]}) {
+      foreach my $idx_file (0..$#$table) {
+        my $colname = $table->[$idx_file][1];
+        $colname = $name_map{$colname} if defined $name_map{$colname};
+        if($try eq $colname or $colname =~ /^(\d+)$/ && $idx_file == $1) {
+          $map{$idx_bed} ||= $idx_file;
+          $core{$colname} = 1;
+          last;
+        }
+      }
+      last if defined $map{$idx_bed};
+    }
+  }
+  foreach my $idx_file (0..$#$table) {
+    my $colname = $table->[$idx_file][1];
+    $colname = $name_map{$colname} if defined $name_map{$colname};
+    $pos{$colname} = $idx_file;
+    next if $core{$colname};
+    push @order,$colname;
+  }
+  return [\%map,\%pos,\@order,\%real_name];
+}
+
+sub _as_transform {
+  my ($self,$data) = @_;
+
+  unless(exists $self->{'_bigbed_as_mapping'}) {
+    $self->{'_bigbed_as_mapping'} = $self->_as_mapping;
+  }
+  my ($map,$pos,$order,$real_name) = @{$self->{'_bigbed_as_mapping'}};
+
+  my (@out,%extra);
+  foreach my $i (0..$#bed_columns) {
+    next unless defined $map->{$i};
+    $out[$map->{$i}] = $data->[$i] || undef;
+  }
+  foreach my $name (@$order) {
+    $extra{$name} = $data->[$pos->{$name}];
+  }
+  return (\@out,\%extra,$order);
+}
+
+sub has_column {
+  my ($self,$column) = @_;
+
+  unless(exists $self->{'_bigbed_as_mapping'}) {
+    $self->{'_bigbed_as_mapping'} = $self->_as_mapping;
+  }
+  my ($map,$pos,$order,$real_name) = @{$self->{'_bigbed_as_mapping'}};
+  return 1 if defined $pos->{$column};
+  foreach my $bc_idx (0..$#bed_columns) {
+    next unless $bed_columns[$bc_idx]->[0] eq $column;
+    return 1 if exists $map->{$bc_idx};
+  }
+  return 0;
+}
+
+sub real_names {
+  my ($self) = @_;
+
+  unless(exists $self->{'_bigbed_as_mapping'}) {
+    $self->{'_bigbed_as_mapping'} = $self->_as_mapping;
+  }
+  my ($map,$pos,$order,$real_name) = @{$self->{'_bigbed_as_mapping'}};
+  return $real_name;
+}
+
+sub real_name {
+  my ($self,$column) = @_;
+
+  return $self->real_names->{$column} || $column;
+}
+
 sub fetch_features  {
   my ($self, $chr_id, $start, $end) = @_;
 
   my @features;
+  my $names = $self->real_names;
   $self->fetch_rows($chr_id,$start,$end,sub {
-    my $bed = EnsEMBL::Web::Text::Feature::BED->new(\@_);
+    my ($row,$extra,$order) = $self->_as_transform(\@_);
+    my $bed = EnsEMBL::Web::Text::Feature::BED->new($row,$extra,$order,$names);
     $bed->coords([$_[0],$_[1],$_[2]]);
 
     ## Set score to undef if missing to distinguish it from a genuine present but zero score
@@ -112,7 +271,7 @@ sub fetch_rows  {
   my ($self, $chr_id, $start, $end, $dowhat) = @_;
 
   my $bb = $self->bigbed_open;
-  warn "Failed to open BigBed file" . $self->url unless $bb;
+  warn "Failed to open BigBed file " . $self->url."\n" unless $bb;
   return [] unless $bb;
   
   #  Maybe need to add 'chr' 

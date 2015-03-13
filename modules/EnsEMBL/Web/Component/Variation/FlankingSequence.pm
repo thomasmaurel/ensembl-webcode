@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,10 +25,14 @@ use base qw(EnsEMBL::Web::Component::TextSequence EnsEMBL::Web::Component::Varia
 sub initialize {
   my $self              = shift;
   my $hub               = $self->hub;
-  my $object            = $self->object;
+  my $object            = $self->object || $hub->core_object('variation');
   my $vf                = $hub->param('vf');
-  my $flanking          = $hub->param('select_sequence') || 'both';
-  my $flank_size        = $hub->param('flank_size') || 400;
+
+  my $type   = $hub->param('data_type') || $hub->type;
+  my $vc = $self->view_config($type);
+
+  my $flanking          = $hub->param('select_sequence') || $vc->get('select_sequence');
+  my $flank_size        = $hub->param('flank_size') || $vc->get('flank_size');
   my @flank             = $flanking eq 'both' ? ($flank_size, $flank_size) : $flanking eq 'up' ? ($flank_size) : (undef, $flank_size);
   my %mappings          = %{$object->variation_feature_mapping}; 
   my $v                 = keys %mappings == 1 ? [ values %mappings ]->[0] : $mappings{$vf};
@@ -46,12 +50,12 @@ sub initialize {
     up   => $flank[0] ? $slice_adaptor->fetch_by_region(undef, $v->{'Chr'}, $slice_start, $v->{'start'} - 1, $v->{'strand'}) : undef,
     down => $flank[1] ? $slice_adaptor->fetch_by_region(undef, $v->{'Chr'}, $v->{'end'} + 1, $slice_end,     $v->{'strand'}) : undef
   );
-  
+ 
   my $config = {
-    display_width  => $hub->param('display_width') || 60,
+    display_width  => $hub->param('display_width') || $vc->get('display_width'),
     species        => $hub->species,
-    snp_display    => $hub->param('snp_display')    eq 'yes',
-    hide_long_snps => $hub->param('hide_long_snps') eq 'yes',
+    snp_display    => $hub->param('snp_display') || $vc->get('snp_display'),
+    hide_long_snps => $hub->param('hide_long_snps') || $vc->get('hide_long_snps'),
     v              => $hub->param('v'),
     focus_variant  => $vf,
     failed_variant => 1,
@@ -69,7 +73,7 @@ sub initialize {
       my $markup = {};
          $seq    = [ map {{ letter => $_ }} split '', $slice->seq ];
       
-      if ($config->{'snp_display'}) {
+      if ($config->{'snp_display'} eq 'on') {
         $self->set_variations($config, { name => $config->{'species'}, slice => $slice }, $markup);
         $self->markup_variation($seq, $markup, $config);
       }
@@ -89,12 +93,12 @@ sub content {
   return $self->_info('A unique location can not be determined for this Variation', $object->not_unique_location) if $object->not_unique_location;
   
   my ($sequence, $config, $raw_seq) = $self->initialize;
-  
+ 
+  my $html; 
   my $hub           = $self->hub;
   my $variation     = $object->Obj;
   my $align_quality = $variation->get_VariationFeature_by_dbID($hub->param('vf'))->flank_match;
-  my $html;
-  
+
   # check if the flanking sequences match the reference sequence
   if (defined $align_quality && $align_quality < 1) {
     my $source_link = $hub->get_ExtURL_link('here', uc $variation->source, "$config->{'v'}#submission");
@@ -106,8 +110,6 @@ sub content {
     ", 'auto');
   }
   
-  $html .= $self->tool_buttons($raw_seq);
-  $html .= sprintf '<div class="sequence_key">%s</div>', $self->get_key($config);
   $html .= $self->build_sequence($sequence, $config);
   
   return $self->_info('Flanking sequence', qq{ 
@@ -117,6 +119,18 @@ sub content {
     To change the display of the flanking sequence (e.g. hide the other variants, change the length of the flanking sequence), 
     use the "<b>Configure this page</b>" link on the left.
   }, 'auto') . $html;
+}
+
+sub export_options { return {'action' => 'FlankingSeq'}; }
+
+sub get_export_data {
+  my $self = shift;
+  return $self->initialize;
+}
+
+sub initialize_export {
+  my $self = shift;
+  return $self->initialize;
 }
 
 sub markup_variation {
@@ -135,12 +149,6 @@ sub markup_variation {
     
     $config->{'key'}{'variations'}{$variation->{'type'}} = 1 if $variation->{'type'} && !$variation->{'focus'};
   }
-}
-
-sub content_rtf {
-  my $self = shift;
-  my ($sequence, $config) = $self->initialize;
-  return $self->export_sequence($sequence, $config);
 }
 
 1;

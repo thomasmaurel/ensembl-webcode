@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ sub render_normal {
   my $length     = $config->container_width;
   my $trans_ref  = $config->{'transcript'};   
   my $transcript = $trans_ref->{'transcript'}; 
-  my $gene       = $self->{'config'}->core_objects->{'gene'};
+  my $gene       = $self->{'config'}->core_object('gene');
   my @exons      = sort { $a->[0] <=> $b->[0] } @{$trans_ref->{'exons'}};
   
   # If stranded diagram skip if on wrong strand

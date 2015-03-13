@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -48,26 +48,29 @@ sub content {
   $table->add_columns(
     { key => 'id',          title => 'Family ID',                            width => '20%', align => 'left', sort => 'html'   },
     { key => 'annot',       title => 'Consensus annotation',                 width => '30%', align => 'left', sort => 'string' },
-    { key => 'transcripts', title => "Other $gene_label transcripts in this family", width => '30%', align => 'left', sort => 'html'   },
+    { key => 'proteins', title => "Other $gene_label proteins in this family", width => '30%', align => 'left', sort => 'html'   },
     { key => 'jalview',     title => 'Multiple alignments',                  width => '20%', align => 'left', sort => 'none'   }
   );
 
   foreach my $family_id (sort keys %$families) {
     my $family     = $families->{$family_id};
     my $row        = { id => sprintf qq(<a href="%s">$family_id</a><br />), $hub->url({ species => 'Multi', type => "Family$ckey", action => 'Details', fm => $family_id, __clear => 1 })};
-    my $genes      = $families->{$family_id}{'info'}{'genes'};
+    my $gene_count = scalar @{$families->{$family_id}{'info'}{'genes'}};
     my $url_params = { function => "Genes$ckey", family => $family_id, g => $gene_stable_id, cdb => $cdb };
-    my $label      =  scalar @$genes > 1 ? 'genes' : 'gene';
+    my $label;
 
-    $row->{'id'}  .= sprintf('(<a href="%s">%s %s</a>)', $hub->url($url_params), scalar @$genes, $label);
+    if ($gene_count) {
+      $label      =  $gene_count > 1 ? 'genes' : 'gene';
+      $row->{'id'}  .= sprintf('(<a href="%s">%s %s</a>)', $hub->url($url_params), $gene_count, $label);
+    }
     $row->{'annot'}        = $families->{$family_id}{'info'}{'description'};
 
-    $row->{'transcripts'}  = '<ul class="compact">';
+    $row->{'proteins'}  = '<ul class="compact">';
     foreach my $t ( @{$family->{'transcripts'}}) {
       (my $name) = $t->display_xref;
       $label = $name ? ' ('.$name.')' : '';
-      my $url = $hub->url({type => 'Transcript', action => 'Summary', t => $t->stable_id });
-      $row->{'transcripts'} .= sprintf '<li><a href="%s">%s</a>%s</li>', $url, $t->stable_id, $label;
+      my $url = $hub->url({type => 'Transcript', action => 'ProteinSummary', t => $t->stable_id });
+      $row->{'proteins'} .= $t->Obj->translation ? sprintf '<li><a href="%s">%s</a>%s</li>', $url, $t->Obj->translation->stable_id, $label : '';
     }
     $row->{'transcripts'} .= '</ul>';
 

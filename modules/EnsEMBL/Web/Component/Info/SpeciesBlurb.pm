@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ use strict;
 use EnsEMBL::Web::Controller::SSI;
 use EnsEMBL::Web::Document::Table;
 
-use base qw(EnsEMBL::Web::Component::Shared);
+use base qw(EnsEMBL::Web::Component::Info);
 
 
 sub _init {
@@ -39,15 +39,9 @@ sub content {
   my $species           = $hub->species;
   my $path              = $hub->species_path;
   my $common_name       = $species_defs->SPECIES_COMMON_NAME;
-  my $display_name      = $species_defs->SPECIES_SCIENTIFIC_NAME;
-  my $ensembl_version   = $species_defs->ENSEMBL_VERSION;
-  my $current_assembly  = $species_defs->ASSEMBLY_NAME;
   my $accession         = $species_defs->ASSEMBLY_ACCESSION;
   my $source            = $species_defs->ASSEMBLY_ACCESSION_SOURCE || 'NCBI';
   my $source_type       = $species_defs->ASSEMBLY_ACCESSION_TYPE;
-  my %archive           = %{$species_defs->get_config($species, 'ENSEMBL_ARCHIVES') || {}};
-  my %assemblies        = %{$species_defs->get_config($species, 'ASSEMBLIES')       || {}};
-  my $previous          = $current_assembly;
 
   my $html = qq(
 <div class="column-wrapper">  
@@ -69,6 +63,10 @@ sub content {
   $html .= EnsEMBL::Web::Controller::SSI::template_INCLUDE($self, "/ssi/species/${species}_assembly.html");
 
   $html .= sprintf '<p>The genome assembly represented here corresponds to %s %s</p>', $source_type, $hub->get_ExtURL_link($accession, "ASSEMBLY_ACCESSION_SOURCE_$source", $accession) if $accession; ## Add in GCA link
+
+  if (my $assembly_dropdown = $self->assembly_dropodown) {
+    $html .= "<h2>Other assemblies</h2>$assembly_dropdown";
+  }
   
   $html .= '<h2 id="genebuild">Gene annotation</h2>';
   $html .= EnsEMBL::Web::Controller::SSI::template_INCLUDE($self, "/ssi/species/${species}_annotation.html");
@@ -86,12 +84,6 @@ sub content {
   my $file = '/ssi/species/stats_' . $self->hub->species . '.html';
   $html .= '<h2>Statistics</h2>';
   $html .= $self->species_stats;
-
-  my $interpro = $self->hub->url({'action' => 'IPtop500'});
-  $html .= qq(<h3>InterPro Hits</h3>
-<ul>
-  <li><a href="$interpro">Table of top 500 InterPro hits</a></li>
-</ul>);
 
   $html .= '
     </div>

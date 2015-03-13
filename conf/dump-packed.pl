@@ -1,5 +1,5 @@
 #!/localsw/bin/perl
-# Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+# Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -80,6 +80,7 @@ print "
 if( $mode ) {
   print "\t",join("\n\t",sort { lc($a) cmp lc($b) } keys %$T );
 } else {
+  local $Data::Dumper::Sortkeys = 1;
   my $X = Data::Dumper::Dumper($T);
   print "\n",substr( $X, 8, -2 ),"\n";
 }

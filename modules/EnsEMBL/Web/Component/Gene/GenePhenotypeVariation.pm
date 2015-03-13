@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,14 +40,17 @@ sub content {
   
   # Check if a variation database exists for the species.
   if ($hub->database('variation')) {
+    my $no_data = '<p>No phenotypes associated with variants in this gene.</p>';
     # Variation phenotypes
     if ($phenotype) {
       my $table_rows = $self->variation_table($phenotype, $display_name);
       my $table      = $table_rows ? $self->make_table($table_rows, $phenotype) : undef;
 
-      $html .= $self->render_content($table, $phenotype);
+      $html .= $table ? $self->render_content($table, $phenotype) : $no_data;
     } else {
-      $html .= $self->render_content($self->stats_table($display_name)); # no sub-table selected, just show stats
+      # no sub-table selected, just show stats
+      my $table = $self->stats_table($display_name);
+      $html .= $table ? $self->render_content($table) : $no_data; 
     }
   }
   
@@ -93,28 +96,30 @@ sub render_content {
 }
 
 sub stats_table {
-  my ($self, $gene_name) = @_;  
-  my $hub        = $self->hub;
-  my $pf_adaptor = $self->hub->database('variation')->get_PhenotypeFeatureAdaptor;
+  my ($self, $gene_name) = @_;
+  my $hub           = $self->hub;
+  my $species_defs  = $hub->species_defs;
+  my $pf_adaptor    = $self->hub->database('variation')->get_PhenotypeFeatureAdaptor;
   my ($total_counts, %phenotypes, @va_ids);
-  
+
   my $columns = [
-    { key => 'count',   title => 'Number of variants', sort => 'numeric_hidden', width => '10%', align => 'right'  },   
-    { key => 'view',    title => 'Show/hide details', sort => 'none',           width => '10%',  align => 'center' },
-    { key => 'phen',    title => 'Phenotype',          sort => 'string',         width => '38%' },
+    { key => 'phen',    title => 'Phenotype', sort => 'string', width => '35%'  },
+    { key => 'source',  title => 'Source(s)', sort => 'string', width => '11%'  },
+    $species_defs->ENSEMBL_CHROMOSOMES
+    ? { key => 'loc',   title => 'Genomic locations', sort => 'none',   width => '16%'  }
+    : (),
+    $species_defs->ENSEMBL_MART_ENABLED
+    ? { key => 'mart',  title => 'Biomart',   sort => 'none',   width => '13%'  }
+    : (),
+    { key => 'count',   title => 'Number of variants',  sort => 'numeric_hidden', width => '10%',   align => 'right'  },
+    { key => 'view',    title => 'Show/hide details',   sort => 'none',           width => '10%',   align => 'center' }
   ];
-  if ($hub->species_defs->ENSEMBL_CHROMOSOMES) {
-    push @$columns, { key => 'loc',   title => 'Locations',   sort => 'none', width => '13%'};
-  }
-  if ($hub->species_defs->ENSEMBL_MART_ENABLED) {
-    push @$columns, { key => 'mart',   title => 'Biomart',    sort => 'none',  width => '13%'};
-  }
-  push @$columns,  { key => 'source',  title => 'Source(s)',  sort => 'string', width => '11%'};
-  
+
   foreach my $pf ($gene_name ? @{$pf_adaptor->fetch_all_by_associated_gene($gene_name)} : ()) {
+    next unless $pf->type eq 'Variation';
     my $var_name   = $pf->object->name;  
     my $phe        = $pf->phenotype->description;
-    my $phe_source = $pf->source;
+    my $phe_source = $pf->source_name;
    
     $phenotypes{$phe} ||= { id => $pf->{'_phenotype_id'} , name => $pf->{'_phenotype_name'}};
     push @{$phenotypes{$phe}{'count'}},  $var_name   unless grep $var_name   eq $_, @{$phenotypes{$phe}{'count'}};
@@ -127,11 +132,11 @@ sub stats_table {
   my ($url, @rows);
   
   
-  my $mart_somatic_url = 'http://www.ensembl.org/biomart/martview?VIRTUALSCHEMANAME=default'.
+  my $mart_somatic_url = $hub->species_defs->ENSEMBL_MART_ENABLED ? '/biomart/martview?VIRTUALSCHEMANAME=default'.
                          '&ATTRIBUTES=hsapiens_snp_som.default.snp.refsnp_id|hsapiens_snp_som.default.snp.chr_name|'.
                          'hsapiens_snp_som.default.snp.chrom_start|hsapiens_snp_som.default.snp.associated_gene'.
                          '&FILTERS=hsapiens_snp_som.default.filters.phenotype_description.&quot;###PHE###&quot;'.
-                         '&VISIBLEPANEL=resultspanel';
+                         '&VISIBLEPANEL=resultspanel' : '';
   my $max_lines = 1000;
   
   # add the row for ALL variations if there are any
@@ -158,7 +163,7 @@ sub stats_table {
     my $mart         = '-';
     
     # BioMart link
-    if ($hub->species_defs->ENSEMBL_MART_ENABLED && grep {$_ eq 'COSMIC'} @{$phenotype->{source}}) {
+    if ($mart_somatic_url && grep {$_ eq 'COSMIC'} @{$phenotype->{source}}) {
       if ($pf_adaptor->count_all_by_phenotype_id($phenotype->{'id'}) > 250) {
         my $mart_phe_url = $mart_somatic_url;
         $mart_phe_url =~ s/###PHE###/$_/;
@@ -167,7 +172,7 @@ sub stats_table {
     }
     # Karyotype link
     if ($hub->species_defs->ENSEMBL_CHROMOSOMES) {
-      $loc = sprintf '<a href="%s">View on Karyotype</a>', $hub->url({ type => 'Phenotype', action => 'Locations', ph => $phenotype->{'id'}, name => $_ }) unless /HGMD/;
+      $loc = sprintf '<a href="%s" class="karyotype_link">View on Karyotype</a>', $hub->url({ type => 'Phenotype', action => 'Locations', ph => $phenotype->{'id'}, name => $_ }) unless /HGMD/;
     }
        
     push @rows, {
@@ -179,8 +184,10 @@ sub stats_table {
       mart    => $mart,
     };
   }
-  
-  return $self->new_table($columns, \@rows, { data_table => 'no_col_toggle', data_table_config => {iDisplayLength => 10}, sorting => [ 'type asc' ], exportable => 0 });
+ 
+  if (scalar @rows) { 
+    return $self->new_table($columns, \@rows, { data_table => 'no_col_toggle', data_table_config => {iDisplayLength => 10}, sorting => [ 'type asc' ], exportable => 0 });
+  }
 }
 
 
@@ -194,7 +201,8 @@ sub variation_table {
   my $g_end         = $gene_slice->end;
   my $phenotype_sql = $phenotype;
      $phenotype_sql =~ s/'/\\'/; # Escape quote character
-  my $pf_adaptor    = $hub->database('variation')->get_PhenotypeFeatureAdaptor;
+  my $db_adaptor = $hub->database('variation');
+  my $pf_adaptor = $db_adaptor->get_PhenotypeFeatureAdaptor;
   my (@rows, %list_sources, %list_phe, $list_variations);
   
   # create some URLs - quicker than calling the url method for every variation
@@ -208,7 +216,7 @@ sub variation_table {
   
   my $all_flag = ($phenotype eq 'ALL') ? 1 : 0;
       
-  foreach my $pf (@{$pf_adaptor->fetch_all_by_associated_gene($gene_name)}) {
+  foreach my $pf (grep {$_->type eq 'Variation'} @{$pf_adaptor->fetch_all_by_associated_gene($gene_name)}) {
       
     next if ($phenotype ne $pf->phenotype->description && $all_flag == 0);
     
@@ -249,7 +257,7 @@ sub variation_table {
     }
       
     # List the phenotype sources for the variation
-    my $phe_source = $pf->source;
+    my $phe_source = $pf->source_name;
     my $ref_source = $pf->external_reference;
     
     $list_phe{$var_name}{$pf->phenotype->description} = 1 if ($all_flag == 1);

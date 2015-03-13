@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,12 +31,12 @@ package EnsEMBL::Web::Object::Transcript;
 
 use strict;
 
-use Bio::EnsEMBL::Utils::TranscriptAlleles qw(get_all_ConsequenceType);
 use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code variation_class);
 
 use EnsEMBL::Web::Cache;
 use Data::Dumper;
 use base qw(EnsEMBL::Web::Object);
+use EnsEMBL::Web::Lazy::Hash qw(lazy_hash);
 
 our $MEMD = EnsEMBL::Web::Cache->new;
 
@@ -437,37 +437,37 @@ sub get_families {
     return {};
   }
 
-  # create family object
-  my $family_adaptor;
-  eval {
-    $family_adaptor = $databases->get_FamilyAdaptor
-  };
-  
-  if ($@) {
-    warn $@; 
-    return {};
-  }
-  
-  my $families = [];
   my $translation = $self->translation_object;
-  
-  eval {
-    $families = $family_adaptor->fetch_by_Member_source_stable_id('ENSEMBLPEP',$translation->stable_id)
-  };
+  return unless $translation;
+
+  my $member = $self->database($cdb)->get_SeqMemberAdaptor->fetch_by_stable_id($translation->stable_id);
+  my $family = $self->database($cdb)->get_FamilyAdaptor->fetch_by_SeqMember($member);
 
   # munge data
   my $family_hash = {};
   
-  if (@$families) {
+  if ($family) {
     my $ga = $self->database('core')->get_GeneAdaptor;
     
-    foreach my $family (@$families) {
-      $family_hash->{$family->stable_id} = {
-        'description' => $family->description,
-        'count'       => $family->Member_count_by_source_taxon('ENSEMBLGENE', $taxon_id),
-        'genes'       => [ map { $ga->fetch_by_stable_id($_->stable_id) } @{$family->get_Member_by_source_taxon('ENSEMBLGENE', $taxon_id) || []} ],
-      };
+    my @members = grep $_->taxon_id eq $taxon_id, @{$family->get_all_GeneMembers};
+    #my @genes = map { $ga->fetch_by_stable_id($_->stable_id) } @members;
+    my @genes = map { $_->get_Gene } @members;
+
+    ## dedupe genes
+    my %seen;
+    foreach (@genes) {
+      next unless $_;
+      next if $seen{$_->stable_id};
+      $seen{$_->stable_id} = $_;
     }
+
+    my @unique_genes = values %seen;
+
+    $family_hash->{$family->stable_id} = {
+      'description' => $family->description,
+      'genes'       => \@unique_genes, 
+      'count'       => scalar @members, 
+    };
   }
   
   return $family_hash;
@@ -656,8 +656,9 @@ sub getAllelesConsequencesOnSlice {
   my $valids = $self->valids;  
 
   # Get all features on slice
-  my $allele_features = $sample_slice->get_all_AlleleFeatures_Slice(1) || []; 
-  return ([], []) unless @$allele_features;
+  ## Don't assume that a sample ID taken from CGI input is actually present in this species!
+  my $allele_features = eval {$sample_slice->get_all_AlleleFeatures_Slice(1) || []}; 
+  return ([], []) if $@ || !@$allele_features;
 
   my @filtered_af =
     sort { $a->[2]->start <=> $b->[2]->start }
@@ -827,6 +828,31 @@ sub munge_gaps_split {
   }
   
   return @return;
+}
+
+sub read_coverage {
+  my ($self, $sample, $sample_slice) = @_;
+  
+  my $individual_adaptor = $self->Obj->adaptor->db->get_db_adaptor('variation')->get_IndividualAdaptor;
+  my $sample_objs = $individual_adaptor->fetch_all_by_name($sample);
+  return ([], []) unless @$sample_objs;
+  my $sample_obj = $sample_objs->[0];
+  
+  my $rc_adaptor = $self->Obj->adaptor->db->get_db_adaptor('variation')->get_ReadCoverageAdaptor;
+  my $coverage_level = $rc_adaptor->get_coverage_levels;
+  my $coverage_obj = $rc_adaptor->fetch_all_by_Slice_Individual_depth($sample_slice, $sample_obj);
+  return ($coverage_level, $coverage_obj);
+}
+
+sub munge_read_coverage {
+  my ($self, $coverage_obj) = @_;
+  
+  my @filtered_obj =
+    sort { $a->[2]->start <=> $b->[2]->start }
+    map  { $self->munge_gaps_split('tsv_transcript', $_->start, $_->end, $_) }
+    @$coverage_obj;
+  
+  return  \@filtered_obj;
 }
 
 #-- end transcript SNP view ----------------------------------------------
@@ -1056,13 +1082,13 @@ sub display_xref {
 =cut
 
 sub get_similarity_hash {
-  my ($self, $recurse) = @_;  
-
+  my ($self, $recurse, $obj) = @_;  
+  $obj ||= $self->transcript;
   $recurse = 1 unless defined $recurse;
   my $DBLINKS;
   
   eval { 
-    $DBLINKS = $recurse ? $self->transcript->get_all_DBLinks : $self->transcript->get_all_DBEntries;
+    $DBLINKS = $recurse ? $obj->get_all_DBLinks : $obj->get_all_DBEntries;
   };
   
   warn "SIMILARITY_MATCHES Error on retrieving gene DB links $@" if $@;
@@ -1151,10 +1177,13 @@ sub get_go_list {
       my $has_ancestor = (!defined ($ancestor));
       if (!$has_ancestor){
         $has_ancestor=($go eq $ancestor);
+        my $term = $goa->fetch_by_accession($go);
 
-        my $ancestors = $goa->fetch_all_by_descendant_term($goa->fetch_by_accession($go));
-        for(my $i=0; $i< scalar (@$ancestors) && !$has_ancestor; $i++){
-          $has_ancestor=(@{$ancestors}[$i]->accession eq $ancestor);
+        if ($term) {
+          my $ancestors = $goa->fetch_all_by_descendant_term($term);
+          for(my $i=0; $i< scalar (@$ancestors) && !$has_ancestor; $i++){
+            $has_ancestor=(@{$ancestors}[$i]->accession eq $ancestor);
+          }
         }
       }
       
@@ -1355,7 +1384,7 @@ sub get_archive_object {
   my $self = shift;
   my $id = $self->stable_id;
   my $archive_adaptor = $self->database('core')->get_ArchiveStableIdAdaptor;
-  my $archive_object = $archive_adaptor->fetch_by_stable_id($id);
+  my $archive_object = $archive_adaptor->fetch_by_stable_id($id, 'Transcript');
 
   return $archive_object;
 }
@@ -1626,8 +1655,27 @@ sub get_genetic_variations {
 }
 
 sub get_transcript_variations {
-  my $self = shift;
+  my ($self,$vf_cache) = @_;
+
+  # Most VFs will be in slice for transcript, so cache them.
+  if($vf_cache and !$self->__data->{'vf_cache'}) {
+    my $vfa = $self->get_adaptor('get_VariationFeatureAdaptor','variation');
+    $self->__data->{'vf_cache'} = {};
+    my $vfs = $vfa->fetch_all_by_Slice_constraint($self->Obj->feature_Slice);
+    $self->__data->{'vf_cache'}{$_->dbID} = $_ for(@$vfs);
+    $vfs = $vfa->fetch_all_somatic_by_Slice_constraint($self->Obj->feature_Slice);
+    $self->__data->{'vf_cache'}{$_->dbID} = $_ for(@$vfs);
+  }
 	return $self->get_adaptor('get_TranscriptVariationAdaptor', 'variation')->fetch_all_by_Transcripts_with_constraint([ $self->Obj ]);
+}
+
+sub transcript_variation_to_variation_feature {
+  my ($self,$tv) = @_;
+
+  my $vfid = $tv->_variation_feature_id;
+  my $val = ($self->__data->{'vf_cache'}||{})->{$vfid};
+  return $val if defined $val;
+  return $tv->variation_feature;
 }
 
 sub variation_data {
@@ -1660,43 +1708,50 @@ sub variation_data {
   #  }
   #}
   
-  foreach my $tv (@{$self->get_transcript_variations}) {
+  foreach my $tv (@{$self->get_transcript_variations(1)}) {
     my $pos = $tv->translation_start;
     
     next if !$include_utr && !$pos;
     next unless $tv->cdna_start && $tv->cdna_end;
     next if scalar keys %consequence_filter && !grep $consequence_filter{$_}, @{$tv->consequence_type};
     
-    my $vf    = $tv->variation_feature;
+    my $vf    = $self->transcript_variation_to_variation_feature($tv) or next;
     my $vdbid = $vf->dbID;
     
     #next if scalar keys %population_filter && !$population_filter{$vdbid};
     
     my $start = $vf->start;
     my $end   = $vf->end;
-    my $tva   = $tv->get_all_alternate_TranscriptVariationAlleles->[0];
     
-    push @data, {
-      tva           => $tva,
+    push @data, lazy_hash({
+      tva           => sub {
+        return $tv->get_all_alternate_TranscriptVariationAlleles->[0];
+      },
       tv            => $tv,
       vf            => $vf,
       position      => $pos,
       vdbid         => $vdbid,
-      snp_source    => $vf->source,
-      snp_id        => $vf->variation_name,
-      ambigcode     => $vf->ambig_code($strand),
-      codons        => $pos ? join(', ', split '/', $tva->display_codon_allele_string) : '',
-      allele        => $vf->allele_string(undef, $strand),
-      pep_snp       => join(', ', split '/', $tva->pep_allele_string),
-      type          => $tv->display_consequence,
-      class         => $vf->var_class,
-      length        => $end - $start,
-      indel         => $vf->var_class =~ /in\-?del|insertion|deletion/ ? ($start > $end ? 'insert' : 'delete') : '',
-      codon_seq     => [ map $coding_sequence[3 * ($pos - 1) + $_], 0..2 ],
-      codon_var_pos => ($tv->cds_start + 2) - ($pos * 3)
-    };
+      snp_source    => sub { $vf->source },
+      snp_id        => sub { $vf->variation_name },
+      ambigcode     => sub { $vf->ambig_code($strand) },
+      codons        => sub {
+        my $tva = $_[0]->get('tva');
+        return $pos ? join(', ', split '/', $tva->display_codon_allele_string) : '';
+      },
+      allele        => sub { $vf->allele_string(undef, $strand) },
+      pep_snp       => sub {
+        my $tva = $_[0]->get('tva');
+        return join(', ', split '/', $tva->pep_allele_string);
+      },
+      type          => sub { $tv->display_consequence },
+      class         => sub { $vf->var_class },
+      length        => $vf->length,
+      indel         => sub { $vf->var_class =~ /in\-?del|insertion|deletion/ ? ($start > $end ? 'insert' : 'delete') : '' },
+      codon_seq     => sub { [ map $coding_sequence[3 * ($pos - 1) + $_], 0..2 ] },
+      codon_var_pos => sub { ($tv->cds_start + 2) - ($pos * 3) },
+    });
   }
-  
+
   @data = map $_->[2], sort { $a->[0] <=> $b->[0] || $a->[1] <=> $b->[1] } map [ $_->{'vf'}->length, $_->{'vf'}->most_severe_OverlapConsequence->rank, $_ ], @data;
   
   return \@data;
@@ -1740,8 +1795,17 @@ sub peptide_splice_sites {
 
 sub can_export {
   my $self = shift;
+
+  return $self->action =~ /^(Export|Exons|Sequence_cDNA|Sequence_Protein)$/ ? 0 : $self->availability->{'transcript'};
   
-  return $self->action =~ /^Export$/ ? 0 : $self->availability->{'transcript'};
+}
+
+sub get_database_matches {
+  my $self = shift;
+  my $dbpat = shift;
+  my @DBLINKS;
+  eval { @DBLINKS = @{$self->gene->get_all_DBLinks($dbpat)};};
+  return \@DBLINKS  || [];
 }
 
 1;

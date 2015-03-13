@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ use strict;
 
 use Time::HiRes qw(time);
 use Bio::EnsEMBL::Compara::GenomeDB;
+use Bio::EnsEMBL::Compara::Homology;
 use Exporter;
 
 use EnsEMBL::Web::Cache;
@@ -184,7 +185,8 @@ sub availability {
   if (!$self->{'_availability'}) {
     my $availability = $self->_availability;
     my $obj = $self->Obj;
-    
+    my $counts = $self->counts();
+
     if ($self->Obj->isa('Bio::EnsEMBL::LRGSlice')) {
       my $rows = $self->table_info($self->get_db, 'stable_id_event')->{'rows'};
       my $funcgen_db = $self->database('funcgen');
@@ -192,6 +194,7 @@ sub availability {
       $availability->{'lrg'}        = 1;
       $availability->{'core'}       = $self->get_db eq 'core';
       $availability->{'regulation'} = $funcgen_db && $self->table_info('funcgen', 'feature_set')->{'rows'}; 
+      $availability->{"has_$_"}     = $counts->{$_} for qw(structural_variation);
     }
     
     $self->{'_availability'} = $availability;
@@ -207,12 +210,22 @@ sub analysis {
 
 sub counts {
   my $self = shift;
+  my $counts = $self->{'_counts'};
+
+  $counts->{structural_variation} = 0;
+  if ($self->database('variation')){
+    my $vdb = $self->species_defs->get_config($self->species,'databases')->{'DATABASE_VARIATION'};
+    $counts->{structural_variation} = $vdb->{'tables'}{'structural_variation'}{'rows'};
+  }
+
+  return $counts;
+
 =pod
   my $obj = $self->Obj;
 
   return {} unless $obj->isa('Bio::EnsEMBL::Gene');
   
-  my $key = "::COUNTS::GENE::$ENV{'ENSEMBL_SPECIES'}::$self->core_objects->{'parameters'}{'db'}::$self->core_objects->{'parameters'}{'lrg'}::";
+  my $key = "::COUNTS::GENE::$ENV{'ENSEMBL_SPECIES'}::$self->core_object('parameters')->{'db'}::$self->core_object('parameters')->{'lrg'}::";
   my $counts = $MEMD ? $MEMD->get($key) : undef;
   
   if (!$counts) {
@@ -728,60 +741,47 @@ sub get_alternative_locations {
 }
 
 sub get_homology_matches {
-  my ($self, $homology_source, $homology_description, $disallowed_homology, $compara_db) = @_;
+  my ($self, $homology_source, $homology_description, $disallowed_homology, $geneid, $compara_db) = @_;
   
   $homology_source      ||= 'ENSEMBL_HOMOLOGUES';
   $homology_description ||= 'ortholog';
   $compara_db           ||= 'compara';
   
-  my $key = $homology_source . '::' . $homology_description;
+  my $key = "$homology_source::$homology_description";
   
   if (!$self->{'homology_matches'}{$key}) {
-    my $homologues = $self->fetch_homology_species_hash($homology_source, $homology_description, $compara_db);
-    
+    my $homologues = $self->fetch_homology_species_hash($homology_source, $homology_description, $geneid, $compara_db);
+
     return $self->{'homology_matches'}{$key} = {} unless keys %$homologues;
     
-    my $gene          = $self->Obj;
-    my $geneid        = $gene->stable_id;
     my $adaptor_call  = $self->param('gene_adaptor') || 'get_GeneAdaptor';
     my %homology_list;
 
-    # Convert descriptions into more readable form
-    my %desc_mapping = (
-      'ortholog_one2one'          => '1-to-1',
-      'apparent_ortholog_one2one' => '1-to-1 (apparent)', 
-      'ortholog_one2many'         => '1-to-many',
-      'between_species_paralog'   => 'paralogue (between species)',
-      'ortholog_many2many'        => 'many-to-many',
-      'within_species_paralog'    => 'paralogue (within species)',
-      'other_paralog'             => 'other paralogue (within species)',
-      'putative_gene_split'       => 'putative gene split',
-      'contiguous_gene_split'     => 'contiguous gene split'
-    );
-    
     foreach my $display_spp (keys %$homologues){
       my $order = 0;
       
       foreach my $homology (@{$homologues->{$display_spp}}){ 
-        my ($homologue, $homology_desc, $homology_subtype, $query_perc_id, $target_perc_id, $dnds_ratio, $gene_tree_node_id) = @$homology;
-  
+        my ($homologue, $homology_desc, $query_perc_id, $target_perc_id, $dnds_ratio, $gene_tree_node_id, $homology_id) = @$homology;
         next unless $homology_desc =~ /$homology_description/;
         next if $disallowed_homology && $homology_desc =~ /$disallowed_homology/;
         
-        my $homologue_id = $homologue->stable_id;
-        
-        $homology_list{$display_spp}{$homologue_id}{'homology_desc'}       = $desc_mapping{$homology_desc} || 'no description';
-        $homology_list{$display_spp}{$homologue_id}{'homology_subtype'}    = $homology_subtype;
-        $homology_list{$display_spp}{$homologue_id}{'spp'}                 = $display_spp;
-        $homology_list{$display_spp}{$homologue_id}{'sp_common'}           = $homologue->taxon ? $homologue->taxon->common_name : '';
-        $homology_list{$display_spp}{$homologue_id}{'description'}         = $homologue->description || 'No description';
-        $homology_list{$display_spp}{$homologue_id}{'order'}               = $order;
-        $homology_list{$display_spp}{$homologue_id}{'query_perc_id'}       = $query_perc_id;
-        $homology_list{$display_spp}{$homologue_id}{'target_perc_id'}      = $target_perc_id;
-        $homology_list{$display_spp}{$homologue_id}{'homology_dnds_ratio'} = $dnds_ratio; 
-        $homology_list{$display_spp}{$homologue_id}{'display_id'}          = $homologue->display_label || 'Novel Ensembl prediction';
-        $homology_list{$display_spp}{$homologue_id}{'gene_tree_node_id'}   = $gene_tree_node_id;
-        
+# Avoid displaying duplicated (within-species and other paralogs) entries in the homology table (e!59). Skip the other_paralog (     or overwrite it)
+        next if $homology_list{$display_spp}{$homologue->stable_id} && $homology_desc eq 'other_paralog';
+ 
+        $homology_list{$display_spp}{$homologue->stable_id} = {
+          homology_desc       => $Bio::EnsEMBL::Compara::Homology::PLAIN_TEXT_WEB_DESCRIPTIONS{$homology_desc} || 'no description',
+          description         => $homologue->description       || 'No description',
+          display_id          => $homologue->display_label     || 'Novel Ensembl prediction',
+          spp                 => $display_spp,
+          query_perc_id       => $query_perc_id,
+          target_perc_id      => $target_perc_id,
+          homology_dnds_ratio => $dnds_ratio,
+          gene_tree_node_id   => $gene_tree_node_id,
+          dbID                => $homology_id,
+          order               => $order,
+          location            => sprintf('%s:%s-%s:%s', map $homologue->$_, qw(chr_name chr_start chr_end chr_strand))
+        };
+
         $order++;
       }
     }
@@ -796,21 +796,23 @@ sub fetch_homology_species_hash {
   my $self = shift;
   my $homology_source = shift;
   my $homology_description = shift;
+  my $geneid = shift;
   my $compara_db = shift || 'compara';
   
   $homology_source = "ENSEMBL_HOMOLOGUES" unless (defined $homology_source);
   $homology_description= "ortholog" unless (defined $homology_description);
   
-  my $geneid = $self->stable_id;
   my $database = $self->database($compara_db) ;
   my %homologues;
 
   return {} unless $database;
+
   $self->timer_push( 'starting to fetch' , 6 );
 
-  my $query_member = $database->get_GeneMemberAdaptor->fetch_by_source_stable_id("ENSEMBLGENE",$geneid);
+  my $query_member = $database->get_GeneMemberAdaptor->fetch_by_stable_id($geneid);
 
   return {} unless defined $query_member ;
+
   my $homology_adaptor = $database->get_HomologyAdaptor;
 #  It is faster to get all the Homologues and discard undesired entries
 #  my $homologies_array = $homology_adaptor->fetch_all_by_Member_method_link_type($query_member,$homology_source);
@@ -821,8 +823,8 @@ sub fetch_homology_species_hash {
   # Strategy: get the root node (this method gets the whole lineage without getting sister nodes)
   # We use right - left indexes to get the order in the hierarchy.
   
-  my %classification;
-  $classification{'Undetermined'} = 99999999;
+  my %classification = ( Undetermined => 99999999 );
+
   if (my $taxon = $query_member->taxon) {
     my $node = $taxon->root();
 
@@ -834,31 +836,36 @@ sub fetch_homology_species_hash {
       $node = $node->children->[0];
     }
   }
+
   $self->timer_push( 'classification' , 6 );
- 
- foreach my $homology (@{$homologies_array}){
-    next unless ($homology->description =~ /$homology_description/);
+
+  foreach my $homology (@$homologies_array) {
+    next unless $homology->description =~ /$homology_description/;
+
     my ($query_perc_id, $target_perc_id, $genome_db_name, $target_member, $dnds_ratio);
+
     foreach my $member (@{$homology->get_all_Members}) {
-      my $gene_member - $member->gene_member;
+      my $gene_member = $member->gene_member;
+
       if ($gene_member->stable_id eq $query_member->stable_id) {
-        $query_perc_id  = $member->perc_id;
+        $query_perc_id = $member->perc_id;
       } else {
         $target_perc_id = $member->perc_id;
         $genome_db_name = $member->genome_db->name;
         $target_member  = $gene_member;
-        $dnds_ratio     = $homology->dnds_ratio; 
+        $dnds_ratio     = $homology->dnds_ratio;
       }
-    }  
-    push (@{$homologues{$genome_db_name}}, [ $target_member, $homology->description, $homology->taxonomy_level, $query_perc_id, $target_perc_id, $dnds_ratio, $homology->{_gene_tree_node_id}]);
+    }
+
+    # FIXME: ucfirst $genome_db_name is a hack to get species names right for the links in the orthologue/paralogue tables.
+    # There should be a way of retrieving this name correctly instead.
+    push @{$homologues{ucfirst $genome_db_name}}, [ $target_member, $homology->description, $query_perc_id, $target_perc_id, $dnds_ratio, $homology->{_gene_tree_node_id}, $homology->dbID ];
   }
 
-  $self->timer_push( 'homologies hacked', 6 );
-  foreach my $species_name (keys %homologues){
-    @{$homologues{$species_name}} = sort {$classification{$a->[2]} <=> $classification{$b->[2]}} @{$homologues{$species_name}};
+  $self->timer_push('homologies hacked', 6);
 
-  }
-  
+  @{$homologues{$_}} = sort { $classification{$a->[2]} <=> $classification{$b->[2]} } @{$homologues{$_}} for keys %homologues;
+
   return \%homologues;
 }
 
@@ -897,7 +904,7 @@ sub get_compara_Member{
     my $genemember_adaptor = $compara_dba->get_adaptor('GeneMember') || &$error( "Cannot COMPARA->get_adaptor('GeneMember')" );
     # Fetch the object
     my $id = $self->stable_id;
-    my $member = $genemember_adaptor->fetch_by_source_stable_id('ENSEMBLGENE',$id) || &$error( "<h3>No compara ENSEMBLGENE member for $id</h3>" );
+    my $member = $genemember_adaptor->fetch_by_stable_id($id) || &$error( "<h3>No compara ENSEMBLGENE member for $id</h3>" );
     # Update the cache
     $self->{$cachekey} = $member;
   }
@@ -1177,7 +1184,7 @@ sub get_similarity_hash {
 
 sub can_export {
   my $self = shift;
-  return $self->action =~ /^(Export|Genome)$/ ? 0 : $self->availability->{'lrg'};
+  return $self->action =~ /^(Export|Genome|Sequence_DNA)$/ ? 0 : $self->availability->{'lrg'};
 }
 
 1;

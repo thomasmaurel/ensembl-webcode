@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -171,7 +171,7 @@ sub block_features_zmenu {
 
   my $href = $self->_url({
     action => 'FeatureEvidence',
-    rf     => $self->{'config'}->core_objects->{'regulation'}->stable_id,
+    rf     => $self->{'config'}->core_object('regulation')->stable_id,
     fdb    => 'funcgen',
     pos    => $pos,
     fs     => $feature_set,

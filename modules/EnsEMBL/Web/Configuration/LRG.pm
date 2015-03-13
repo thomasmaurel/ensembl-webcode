@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -78,30 +78,36 @@ sub populate_tree {
 
   $self->create_node('Summary', 'LRG summary',
     [qw(
-      lrg_summary EnsEMBL::Web::Component::LRG::LRGSummary
       transcripts EnsEMBL::Web::Component::LRG::TranscriptsImage  
     )],
     { 'availability' => 'lrg' }
   );
 
-	my $seq_menu = $self->create_submenu('Sequence', 'Sequence');
+  my $seq_menu = $self->create_submenu('Sequence', 'Sequence');
   
-	$seq_menu->append($self->create_node('Sequence_DNA', 'Sequence',
+  $seq_menu->append($self->create_node('Sequence_DNA', 'Sequence',
     [qw( exons EnsEMBL::Web::Component::LRG::LRGSeq )],
     { 'availability' => 'lrg' }
   ));
+
+  $seq_menu->append($self->create_node('Differences', 'Reference comparison',
+    [qw(
+      exons EnsEMBL::Web::Component::LRG::LRGDiff
+      align EnsEMBL::Web::Component::LRG::LRGAlign)],
+    { 'availability' => 'lrg' }
+  ));
 	
-	$seq_menu->append($self->create_node('Exons', 'Exons',
+  $seq_menu->append($self->create_node('Exons', 'Exons',
     [qw( exons EnsEMBL::Web::Component::LRG::ExonsSpreadsheet )],
     { 'availability' => 'lrg', 'concise' => 'Exons' }
   ));
   
- $seq_menu->append($self->create_node('Sequence_cDNA', 'cDNA',
+  $seq_menu->append($self->create_node('Sequence_cDNA', 'cDNA',
     [qw( sequence EnsEMBL::Web::Component::LRG::TranscriptSeq )],
     { 'availability' => 'lrg', 'concise' => 'cDNA sequence' }
   ));
   
-	$seq_menu->append($self->create_node('Sequence_Protein', 'Protein',
+  $seq_menu->append($self->create_node('Sequence_Protein', 'Protein',
     [qw( sequence EnsEMBL::Web::Component::LRG::ProteinSeq )],
     { 'availability' => 'lrg', 'concise' => 'Protein sequence' }
   ));
@@ -113,13 +119,14 @@ sub populate_tree {
     { 'availability' => 'lrg', 'concise' => 'Protein summary' }
   );
 
-
-  $self->create_node('Differences', 'Reference comparison',
-    [qw( 
-		   exons EnsEMBL::Web::Component::LRG::LRGDiff 
-			 align EnsEMBL::Web::Component::LRG::LRGAlign)],
-    { 'availability' => 'lrg' }
-  );
+  $self->create_node('Phenotype',  'Phenotype',
+    [qw(
+      phenotype EnsEMBL::Web::Component::LRG::GenePhenotype
+      variation EnsEMBL::Web::Component::LRG::LRGPhenotypeVariation
+      orthologue EnsEMBL::Web::Component::LRG::GenePhenotypeOrthologue
+    )],
+    { 'availability' => 1 }
+   );
  
   my $var_menu = $self->create_submenu('Variation', 'Genetic Variation');
 
@@ -127,6 +134,15 @@ sub populate_tree {
     [qw( snptable EnsEMBL::Web::Component::LRG::VariationTable )],
     { 'availability' => 'lrg' }
   ));
+
+  $var_menu->append($self->create_node('StructuralVariation_LRG', 'Structural variation',
+    [qw(
+      svimage EnsEMBL::Web::Component::LRG::SVImage
+      svtable EnsEMBL::Web::Component::LRG::SVTable
+    )],
+    { 'availability' => 'lrg has_structural_variation core' }
+  ));
+
 
   $self->create_subnode('Output', 'Export LRG Data',
     [qw( export EnsEMBL::Web::Component::Export::Output )],

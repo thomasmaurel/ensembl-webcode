@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,14 +32,14 @@ sub render {
   my $self            = shift;
   my $hub             = $self->hub;
   my $species_defs    = $hub->species_defs;
-  my $version         = $species_defs->ENSEMBL_VERSION;
+  my $version         = $species_defs->ORIGINAL_VERSION || $species_defs->ENSEMBL_VERSION;
   my $rel             = "release-$version"; # Always set to use the release number rather than current to get around the delay in FTP site links updating
   my $required_lookup = $self->required_types_for_species;
   my ($columns, $rows);
   
   my %title = (
     dna       => 'Masked and unmasked genome sequences associated with the assembly (contigs, chromosomes etc.)',
-    cdna      => 'cDNA sequences for Ensembl or "ab initio" predicted genes',
+    cdna      => 'cDNA sequences for both Ensembl and "ab initio" predicted genes',
     cds       => 'Coding sequences for Ensembl or "ab initio" predicted genes',
     prot      => 'Protein sequences for Ensembl or "ab initio" predicted genes',
     rna       => 'Non-coding RNA gene predictions',
@@ -110,10 +110,11 @@ sub render {
   foreach my $sp (@$all_species) {
     my $sp_dir    = $sp->{'dir'};
     my $sp_var    = $sp_dir. '_variation';
+    my $databases = $hub->species_defs->get_config(ucfirst($sp_dir), 'databases');
 
     push @$rows, {
       fave    => $sp->{'favourite'} ? 'Y' : '',
-      species => sprintf('<b>%s</b><br /><i>%s</i>', $sp->{'common_name'}, $sp->{'sci_name'}),
+      species => sprintf('<b><a href="/%s/">%s</a></b><br /><i>%s</i>', $sp_dir, $sp->{'common_name'}, $sp->{'sci_name'}),
       dna     => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/fasta/%s/dna/">FASTA</a>',   $title{'dna'},     $rel, $sp_dir),
       cdna    => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/fasta/%s/cdna/">FASTA</a>',  $title{'cdna'},    $rel, $sp_dir),
       cds	  => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/fasta/%s/cds/">FASTA</a>',   $title{'cds'},     $rel, $sp_dir),
@@ -123,11 +124,11 @@ sub render {
       genbank => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/genbank/%s/">GenBank</a>',   $title{'genbank'}, $rel, $sp_dir),
       genes   => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/gtf/%s">GTF</a>',            $title{'gtf'},     $rel, $sp_dir),
       mysql   => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/mysql/">MySQL</a>',          $title{'mysql'},   $rel),
-      var2    => $required_lookup->{'var2'}{$sp_dir}    ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/variation/gvf/%s/">GVF</a>',                $title{'gvf'},     $rel, $sp_dir) : '-',
-      var4    => $required_lookup->{'var4'}{$sp_dir}    ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/variation/vcf/%s/">VCF</a>',                $title{'vcf'},     $rel, $sp_dir) : '-',
+      var2    => $databases->{'DATABASE_VARIATION'} ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/variation/gvf/%s/">GVF</a>',                $title{'gvf'},     $rel, $sp_dir) : '-',
+      var4    => $databases->{'DATABASE_VARIATION'} ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/variation/vcf/%s/">VCF</a>',                $title{'vcf'},     $rel, $sp_dir) : '-',
       var3    => sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/variation/VEP/">VEP</a>',    $title{'vep'},     $rel),
       funcgen => $required_lookup->{'funcgen'}{$sp_dir} ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/regulation/%s/">Regulation</a> (GFF)',      $title{'funcgen'}, $rel, $sp_dir) : '-',
-      bam     => $required_lookup->{'bam'}{$sp_dir}     ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/bam/%s/genebuild/">BAM</a>',                $title{'bam'},     $rel, $sp_dir) : '-',
+      bam     => $databases->{'DATABASE_RNASEQ'}    ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/bam/%s/genebuild/">BAM</a>',                $title{'bam'},     $rel, $sp_dir) : '-',
       files   => $required_lookup->{'files'}{$sp_dir}   ? sprintf('<a rel="external" title="%s" href="ftp://ftp.ensembl.org/pub/%s/data_files/%s/">Regulation data files</a>', $title{'files'},   $rel, $sp_dir) : '-',
     };
   }
@@ -140,6 +141,7 @@ sub render {
     { key => 'database',  title => 'Database' },
     { key => 'mysql',     title => '', align => 'center' },
     { key => 'emf',       title => '', align => 'center' },
+    { key => 'maf',       title => '', align => 'center' },
     { key => 'bed',       title => '', align => 'center' },
     { key => 'xml',       title => '', align => 'center' },
     { key => 'ancestral', title => '', align => 'center' }
@@ -147,6 +149,7 @@ sub render {
     database  => 'Comparative genomics',
     mysql     => qq(<a rel="external" title="$title{'mysql'}" href="ftp://ftp.ensembl.org/pub/$rel/mysql/">MySQL</a>),
     emf       => qq(<a rel="external" title="$title{'emf'}" href="ftp://ftp.ensembl.org/pub/$rel/emf/ensembl-compara/">EMF</a>),
+    maf       => qq(<a rel="external" title="$title{'maf'}" href="ftp://ftp.ensembl.org/pub/$rel/maf/ensembl-compara/">MAF</a>),
     bed       => qq(<a rel="external" title="$title{'bed'}" href="ftp://ftp.ensembl.org/pub/$rel/bed/">BED</a>),
     xml       => qq(<a rel="external" title="$title{'xml'}" href="ftp://ftp.ensembl.org/pub/$rel/xml/ensembl-compara/homologies/">XML</a>),
     ancestral => qq(<a rel="external" title="$title{'ancestral'}" href="ftp://ftp.ensembl.org/pub/$rel/fasta/ancestral_alleles">Ancestral Alleles</a>),
@@ -154,6 +157,7 @@ sub render {
     database  => 'BioMart',
     mysql     => qq(<a rel="external" title="$title{'mysql'}" href="ftp://ftp.ensembl.org/pub/$rel/mysql/">MySQL</a>),
     emf       => '-',
+    maf       => '-',
     bed       => '-',
     xml       => '-',
     ancestral => '-',
@@ -161,6 +165,7 @@ sub render {
     database  => 'Stable ids',
     mysql     => qq(<a rel="external" title="$title{'mysql'}" href="ftp://ftp.ensembl.org/pub/$rel/mysql/ensembl_stable_ids_$version/">MySQL</a>),
     emf       => '-',
+    maf       => '-',
     bed       => '-',
     xml       => '-',
     ancestral => '-',
@@ -186,27 +191,7 @@ sub required_types_for_species {
   my $self = shift;
   my %required_lookup;
   
-  # GVF
-  $required_lookup{'var2'} = { map { $_ => 1 } qw(
-    bos_taurus canis_familiaris danio_rerio drosophila_melanogaster 
-    equus_caballus felis_catus gallus_gallus homo_sapiens 
-    saccharomyces_cerevisiae monodelphis_domestica mus_musculus 
-    nomascus_leucogenys ornithorhynchus_anatinus ovis_aries pan_troglodytes pongo_pygmaeus 
-    rattus_norvegicus sus_scrofa taeniopygia_guttata tetraodon_nigroviridis 
-    pongo_abelii macaca_mulatta meleagris_gallopavo
-  )};
-
-  # VCF
-  $required_lookup{'var4'} = { map { $_ => 1 } qw(
-    bos_taurus canis_familiaris danio_rerio drosophila_melanogaster 
-    equus_caballus felis_catus gallus_gallus homo_sapiens 
-    saccharomyces_cerevisiae monodelphis_domestica mus_musculus nomascus_leucogenys
-    ornithorhynchus_anatinus ovis_aries pan_troglodytes pongo_pygmaeus 
-    rattus_norvegicus sus_scrofa taeniopygia_guttata tetraodon_nigroviridis 
-    pongo_abelii macaca_mulatta meleagris_gallopavo
-  )};
-  
-  # Funcgen
+  # Regulatory build
   $required_lookup{'funcgen'} = { map { $_ => 1 } qw(
     homo_sapiens mus_musculus
   )};
@@ -214,13 +199,6 @@ sub required_types_for_species {
   # Funcgen files
   $required_lookup{'files'} = { map { $_ => 1 } qw(
     homo_sapiens mus_musculus
-  )};
-  
-  # BAM
-  $required_lookup{'bam'} = { map { $_ => 1 } qw(
-    anolis_carolinensis astyanax_mexicanus canis_familiaris danio_rerio dasypus_novemcinctus ficedula_albicollis gallus_gallus lepisosteus_oculatus monodelphis_domestica mustela_putorius_furo
-    oreochromis_niloticus ornithorhynchus_anatinus oryctolagus_cuniculus ovis_aries pan_troglodytes pelodiscus_sinensis
-    pongo_abelii sarcophilus_harrisii sus_scrofa xiphophorus_maculatus homo_sapiens felis_catus mus_musculus
   )};
   
   return \%required_lookup;

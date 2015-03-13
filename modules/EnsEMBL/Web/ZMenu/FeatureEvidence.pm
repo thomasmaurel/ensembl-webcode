@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,15 +20,14 @@ package EnsEMBL::Web::ZMenu::FeatureEvidence;
 
 use strict;
 
-use base qw(EnsEMBL::Web::ZMenu);
+use base qw(EnsEMBL::Web::ZMenu::RegulationBase);
 
 sub content {
   my $self                = shift;
   my $hub                 = $self->hub;
   my $db_adaptor          = $hub->database($hub->param('fdb'));
   my $feature_set         = $db_adaptor->get_FeatureSetAdaptor->fetch_by_name($hub->param('fs')); 
-  my $input_set           = $feature_set->get_InputSet;
-  my ($chr, $start, $end) = split /\:|\-/g, $hub->param('pos'); 
+  my ($chr, $start, $end) = split /\:|\-/, $hub->param('pos'); 
   my $length              = $end - $start + 1;
   my $slice               = $hub->database('core')->get_SliceAdaptor->fetch_by_region('toplevel', $chr, $start, $end);
   my @a_features          = @{$db_adaptor->get_AnnotatedFeatureAdaptor->fetch_all_by_Slice($slice)};
@@ -58,21 +57,17 @@ sub content {
     label => $feature_set->display_label
   });
 
-  if ($input_set) {
-    my $source_info = $input_set->source_info; 
-    my $experiment_link = "";
 
-    foreach my $source (@{$source_info}){ 
-      my $source_link = sprintf '<a href="%s">%s</a> ',
-      $hub->url({'type' => 'Experiment', 'action' => 'Sources', 'ex' => 'name-'.$feature_set->name}),
-      $source->[0];
-      $experiment_link .= "$source_link";
-    }
+  my $source_label = $feature_set->source_label;
+
+  if(defined $source_label){
 
     $self->add_entry({
       type        => 'Source',
-      label_html  =>  $experiment_link
-    });
+      label_html  =>  sprintf '<a href="%s">%s</a> ',
+                      $hub->url({'type' => 'Experiment', 'action' => 'Sources', 'ex' => 'name-'.$feature_set->name}),
+                      $source_label
+                     });
   }
 
   my $loc_link = sprintf '<a href="%s">%s</a>', 
@@ -90,7 +85,9 @@ sub content {
     });
   }
 
-  if (scalar (keys %motif_features) >> 0  ){
+  $self->_add_nav_entries($hub->param('evidence')||0);
+
+  if (scalar (keys %motif_features) > 0  ){
     # get region clicked on
     my $nearest_feature = 1;
     my $nearest         = 1e12; # Arbitrary large number

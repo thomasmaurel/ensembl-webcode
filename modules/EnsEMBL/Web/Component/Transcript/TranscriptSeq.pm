@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@ use strict;
   
 use base qw(EnsEMBL::Web::Component::TextSequence EnsEMBL::Web::Component::Transcript);
 
+use List::Util qw(max);
+
 sub get_sequence_data {
-  my ($self, $object, $config) = @_;
+  my ($self, $object, $config,$adorn) = @_;
   my $hub          = $self->hub;
   my $trans        = $object->Obj;
   my $slice        = $trans->feature_Slice;
@@ -137,7 +139,7 @@ sub get_sequence_data {
     $protein_seq->{'seq'}[$pos]{'letter'} = $partial[$pos] while $pos--; # Replace . with as much of -X- as fits in the space
   }
   
-  if ($config->{'snp_display'}) {
+  if ($config->{'snp_display'} and $adorn ne 'none') {
     foreach my $snp (reverse @{$object->variation_data($slice, $config->{'utr'}, $trans_strand)}) {
       next if $config->{'hide_long_snps'} && $snp->{'vf'}->length > $self->{'snp_length_filter'};
       
@@ -161,7 +163,7 @@ sub get_sequence_data {
       
       foreach ($start..$end) {
         $mk->{'variations'}{$_}{'alleles'}   .= ($mk->{'variations'}{$_}{'alleles'} ? ', ' : '') . $alleles;
-        $mk->{'variations'}{$_}{'url_params'} = { v => $variation_name, vf => $dbID, vdb => 'variation' };
+        $mk->{'variations'}{$_}{'url_params'} = { vf => $dbID, vdb => 'variation' };
         $mk->{'variations'}{$_}{'transcript'} = 1;
         
         my $url = $mk->{'variations'}{$_}{'url_params'} ? $hub->url({ type => 'Variation', action => 'Explore', %{$mk->{'variations'}{$_}{'url_params'}} }) : '';
@@ -182,11 +184,14 @@ sub get_sequence_data {
           factorytype => 'Location'
         };
         
-        push @{$mk->{'variations'}{$_}{'href'}{'v'}},  $variation_name;
         push @{$mk->{'variations'}{$_}{'href'}{'vf'}}, $dbID;
         
-        $variation_seq->{'seq'}[$_]{'letter'} = $url ? qq{<a href="$url" title="$variation_name">$ambigcode</a>} : $ambigcode;
-        $variation_seq->{'seq'}[$_]{'url'}    = $url;
+        $variation_seq->{'seq'}[$_]{'letter'} = $ambigcode;
+        $variation_seq->{'seq'}[$_]{'new_letter'} = $ambigcode;
+        $variation_seq->{'seq'}[$_]{'href'} = $url;
+        $variation_seq->{'seq'}[$_]{'title'} = $variation_name;
+        $variation_seq->{'seq'}[$_]{'tag'} = 'a';
+        $variation_seq->{'seq'}[$_]{'class'} = '';
       }
     }
   }
@@ -226,7 +231,11 @@ sub get_sequence_data {
       
       foreach my $type (keys %$mk) {
         my %tmp = map { $_ - $cd_start + 1 >= 0 && $_ - $cd_start + 1 < $length ? ($_ - $cd_start + 1 => $mk->{$type}{$_}) : () } keys %{$mk->{$type}};
+        my $decap = max(-1,grep {  $_-$cd_start+1 < 0 } keys %{$mk->{$type}});
         $shifted->{$type} = \%tmp;
+        if($decap > 0 and $type eq 'exons') {
+          $shifted->{$type}{0}{'type'} = $mk->{$type}{$decap}{'type'};
+        }
       }
       
       $mk = $shifted;
@@ -235,10 +244,10 @@ sub get_sequence_data {
   
   # Used to set the initial sequence colour
   if ($config->{'exons'}) {
-    $_->{'exons'}{0}{'type'} = [ 'exon0' ] for @markup;
+    $_->{'exons'}{0}{'type'} ||= [ 'exon0' ] for @markup;
   }
   
-  return (\@sequence, \@markup, $seq);
+  return (\@sequence, \@markup);
 }
 
 sub markup_line_numbers {
@@ -315,53 +324,61 @@ sub markup_line_numbers {
 sub initialize {
   my $self   = shift;
   my $hub    = $self->hub;
-  my $object = $self->object;
-  
+  my $object = $self->object || $hub->core_object('transcript');
+
+  my $type   = $hub->param('data_type') || $hub->type;
+  my $vc = $self->view_config($type);
+ 
+  my $adorn = $hub->param('adorn') || 'none';
+ 
   my $config = { 
-    display_width   => $hub->param('display_width') || 60,
     species         => $hub->species,
     maintain_colour => 1,
     transcript      => 1,
   };
-  
-  $config->{$_}            = $hub->param($_) eq 'yes' ? 1 : 0 for qw(exons codons coding_seq translation rna snp_display utr hide_long_snps);
+ 
+  $config->{'display_width'} = $hub->param('display_width') || $vc->get('display_width'); 
+  $config->{$_} = ($hub->param($_) eq 'on' || $vc->get($_) eq 'on') ? 1 : 0 for qw(exons codons coding_seq translation rna snp_display utr hide_long_snps);
   $config->{'codons'}      = $config->{'coding_seq'} = $config->{'translation'} = 0 unless $object->Obj->translation;
-  $config->{'snp_display'} = 0 unless $hub->species_defs->databases->{'DATABASE_VARIATION'};
-  
+ 
   if ($hub->param('line_numbering') ne 'off') {
-    $config->{'line_numbering'} = 'yes';
+    $config->{'line_numbering'} = 'on';
     $config->{'number'}         = 1;
   }
   
   $self->set_variation_filter($config);
   
-  my ($sequence, $markup, $raw_seq) = $self->get_sequence_data($object, $config);
+  my ($sequence, $markup) = $self->get_sequence_data($object, $config,$adorn);
   
   $self->markup_exons($sequence, $markup, $config)     if $config->{'exons'};
   $self->markup_codons($sequence, $markup, $config)    if $config->{'codons'};
-  $self->markup_variation($sequence, $markup, $config) if $config->{'snp_display'};  
+  if($adorn ne 'none') {
+    $self->markup_variation($sequence, $markup, $config) if $config->{'snp_display'};  
+    push @{$config->{'loaded'}||=[]},'variations';
+  } else {
+    push @{$config->{'loading'}||=[]},'variations';
+  }
   $self->markup_line_numbers($sequence, $config)       if $config->{'line_numbering'};
   
   $config->{'v_space'} = "\n" if $config->{'coding_seq'} || $config->{'translation'} || $config->{'rna'};
   
-  return ($sequence, $config, $raw_seq);
+  return ($sequence, $config);
 }
 
 sub content {
   my $self = shift;
-  my ($sequence, $config, $raw_seq) = $self->initialize;
-  
-  my $html  = $self->tool_buttons($raw_seq);
-     $html .= sprintf '<div class="sequence_key">%s</div>', $self->get_key($config);
-     $html .= $self->build_sequence($sequence, $config);
+  my ($sequence, $config) = $self->initialize;
 
-  return $html;
+  return $self->build_sequence($sequence, $config);
 }
 
-sub content_rtf {
+sub export_options { return {'action' => 'Transcript'}; }
+
+sub initialize_export {
   my $self = shift;
+  my $hub = $self->hub;
   my ($sequence, $config) = $self->initialize;
-  return $self->export_sequence($sequence, $config);
+  return ($sequence, $config);
 }
 
 1;

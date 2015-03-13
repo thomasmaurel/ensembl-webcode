@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ sub init {
     map {( "opt_ft_$_" => 'on' )} keys %$analyses
   });
 
-  $self->add_image_config('reg_detail');
+  $self->add_image_config('reg_summary_page');
   $self->title = 'Summary';
 }
 

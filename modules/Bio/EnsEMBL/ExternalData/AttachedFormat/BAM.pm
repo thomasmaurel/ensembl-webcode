@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@ use File::Basename qw(fileparse);
 use File::Spec;
 use File::stat qw(stat);
 
+use EnsEMBL::Web::File::Utils::URL qw(chase_redirects);
+
 use base qw(Bio::EnsEMBL::ExternalData::AttachedFormat);
 
 sub check_data {
@@ -34,6 +36,8 @@ sub check_data {
   my $url = $self->{'url'};
   my $error = '';
   require Bio::DB::Sam;
+
+  $url = chase_redirects($url, {'hub' => $self->{'hub'}});
 
   if ($url =~ /^ftp:\/\//i && !$self->{'hub'}->species_defs->ALLOW_FTP_BAM) {
     $error = "The bam file could not be added - FTP is not supported, please use HTTP.";
@@ -61,7 +65,7 @@ sub check_data {
     warn "Failed to open BAM index for " . $url unless $index;
 
     if ($@ or !$bam or !$index) {
-        $error = "Unable to open/index remote BAM file: $url<br>Ensembl can only display sorted, indexed BAM files.<br>Please ensure that your web server is accessible to the Ensembl site and that both your .bam and .bai files are present, named consistently, and have the correct file permissions (public readable).";
+        $error = "Unable to open/index remote BAM file: $url<br>Ensembl can only display sorted, indexed BAM files.<br>Please ensure that your web server is accessible to the Ensembl site and both your BAM and index files are present and publicly readable.<br>Your BAM and index files must have the same name, with a .bam extension for the BAM file, and a .bam.bai extension for the index file.";
     }
   }
   return $error;

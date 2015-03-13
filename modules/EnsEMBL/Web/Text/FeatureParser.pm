@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ package EnsEMBL::Web::Text::FeatureParser;
 use strict;
 use warnings;
 no warnings "uninitialized";
-use EnsEMBL::Web::Root;
+use EnsEMBL::Root;
 use List::MoreUtils;
 use Carp qw(cluck);
 use Data::Dumper;
@@ -129,25 +129,25 @@ sub filter {
 
 sub parse { 
   my ($self, $data, $format) = @_;
-  $format = 'BED' if $format eq 'BEDGRAPH';
+  ## Make sure format is given as uppercase
+  $format = uc($format);
+  $format = 'BED' if $format =~ /BEDGRAPH|BGR/;
   return 'No data supplied' unless $data;
-  #use Carp qw(cluck); cluck $format;
 
   my $error = $self->check_format($data, $format);
   if ($error) {
     return $error;
   }
   else {
-    $format = uc($self->format); 
     my $filter = $self->filter;
 
     ## Some complex formats need extra parsing capabilities
     my $sub_package = __PACKAGE__."::$format";
-    if (EnsEMBL::Web::Root::dynamic_use(undef, $sub_package)) {
+    if (EnsEMBL::Root::dynamic_use(undef, $sub_package)) {
       bless $self, $sub_package;
     }
     ## Create an empty feature that gives us access to feature info
-    my $feature_class = 'EnsEMBL::Web::Text::Feature::'.uc($format);  
+    my $feature_class = 'EnsEMBL::Web::Text::Feature::'.$format;  
     my $empty = $feature_class->new();
     my $count;
     my $current_max = 0;
@@ -216,8 +216,9 @@ sub parse {
         }
         if ($columns && scalar(@$columns)) {   
           my ($chr, $start, $end) = $empty->coords($columns); 
-          $chr =~ s/[cC]hr//;
-
+          
+          $chr =~ s/[cC]hr// unless grep {$_ eq $chr} @{$self->drawn_chrs};
+          
           ## We currently only do this on initial upload (by passing current location)  
           $self->{'_find_nearest'}{'done'} = $self->_find_nearest(
                       {
@@ -258,7 +259,7 @@ sub parse {
               $current_min = $self->{'tracks'}{$self->current_key}{'config'}{'min_score'};
               $current_max = $feature->score if $feature->score > $current_max;
               $current_min = $feature->score if $feature->score < $current_min;
-              $current_max = 0 unless $current_max; ## Because shit happens...
+              $current_max = 0 unless $current_max; ## Because bad things can happen...
               $current_min = 0 unless $current_min;
               $self->{'tracks'}{$self->current_key}{'config'}{'max_score'} = $current_max;
               $self->{'tracks'}{$self->current_key}{'config'}{'min_score'} = $current_min;
@@ -372,7 +373,7 @@ sub _find_nearest {
 
 sub check_format {
   my ($self, $data, $format) = @_;
-  my $feature_class = 'EnsEMBL::Web::Text::Feature::'.uc($format);  
+  my $feature_class = 'EnsEMBL::Web::Text::Feature::'.$format;  
   unless ($format) {
     foreach my $row ( split /\n|\r/, $data ) { 
       next unless $row;
@@ -398,7 +399,7 @@ sub check_format {
   }
 
   ## Sanity check - can we actually parse this?
-  if ($format && !(EnsEMBL::Web::Root::dynamic_use(undef, 'EnsEMBL::Web::Text::Feature::'.uc($format))) ) {
+  if ($format && !(EnsEMBL::Root::dynamic_use(undef, 'EnsEMBL::Web::Text::Feature::'.uc($format))) ) {
     return 'Unsupported format';
   }
   if (!$format) {
@@ -504,7 +505,7 @@ sub parse_track_def {
   ## Clean up chromosome names
   if (defined $config->{'chrom'}) {
     my $chr = $config->{'chrom'};
-    $chr =~ s/chr//;
+    $chr =~ s/[cC]hr// unless grep {$_ eq $chr} @{$self->drawn_chrs};
     $config->{'chrom'} = $chr;
   }
   ## Add a description
@@ -583,7 +584,7 @@ sub bin_size {
 
 sub store_density_feature {
   my ( $self, $chr, $start, $end ) = @_;
-  $chr =~ s/chr//;  
+  $chr =~ s/[cC]hr// unless grep {$_ eq $chr} @{$self->drawn_chrs};
   if (!$self->{'tracks'}{$self->current_key}) {
     $self->add_track();
   }

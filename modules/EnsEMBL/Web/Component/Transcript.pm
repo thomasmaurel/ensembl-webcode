@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,6 +30,14 @@ use base qw(EnsEMBL::Web::Component::Shared);
 sub non_coding_error {
   my $self = shift;
   return $self->_error('No protein product', '<p>This transcript does not have a protein product</p>');
+}
+
+sub get_export_data {
+## Get data for export
+  my $self = shift;
+  ## Fetch transcript explicitly, as we're probably coming from a DataExport URL
+  my $transcript = $self->hub->core_object('transcript');
+  return $transcript->Obj;
 }
 
 1;

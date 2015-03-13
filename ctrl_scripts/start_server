@@ -19,7 +19,7 @@ Run 'ctrl_script/start_server --help' for usage details.
 
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -171,8 +171,7 @@ if ($flush || $rmconfig) {
 
 warn "==============================================================================\n";
 
-# LOAD LSF ENVIRONMENT - REQUIRED FOR BLAST
-my $cmd     = ". /usr/local/lsf/conf/profile.lsf;" if -e '/usr/local/lsf/conf/profile.lsf';
+my $cmd = '';
 
 if($SiteDefs::APACHE_DEFINE) {
   push @defines,grep { /\S/ } split(' ',$SiteDefs::APACHE_DEFINE);

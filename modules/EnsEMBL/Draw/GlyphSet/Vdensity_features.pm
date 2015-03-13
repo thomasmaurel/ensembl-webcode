@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ sub _init {
   my $slice_adapt   = $self->{'container'}->{'sa'};
   my $density_adapt = $self->{'container'}->{'da'};
 
-  my $chr_slice = $slice_adapt->fetch_by_region('chromosome', $chr);
+  my $chr_slice = $slice_adapt->fetch_by_region(undef, $chr);
 
   my @objs = map { { 'key' => $_,'scale'=>1,'max_value'=>0} }
              @{ $self->my_config('keys')||[] };

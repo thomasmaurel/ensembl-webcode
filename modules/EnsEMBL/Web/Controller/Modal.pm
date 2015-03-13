@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ sub request   { return 'modal'; }
 
 sub init {
   my $self = shift;
-  
+
   $self->builder->create_objects unless $self->page_type eq 'Configurator' && !scalar grep $_, values %{$self->hub->core_params};
   $self->renderer->{'_modal_dialog_'} = $self->r->headers_in->{'X-Requested-With'} eq 'XMLHttpRequest' || $self->hub->param('X-Requested-With') eq 'iframe'; # Flag indicating that this is modal dialog panel, loaded by AJAX/hidden iframe
   $self->page->initialize; # Adds the components to be rendered to the page module

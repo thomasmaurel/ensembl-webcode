@@ -1,5 +1,5 @@
 /*
- * Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+ * Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,23 +19,35 @@ Ensembl.Panel.TextSequence = Ensembl.Panel.Content.extend({
     this.base.apply(this, arguments);
     
     Ensembl.EventManager.register('dataTableRedraw', this, this.initPopups);
-    Ensembl.EventManager.register('ajaxComplete',    this, this.sequenceKey);
-    Ensembl.EventManager.register('getSequenceKey',  this, this.getSequenceKey);
   },
   
   init: function () {
     var panel = this;
     
     this.popups = {};
-    this.zmenuId = 1;
+    Ensembl.Panel.TextSequence.zmenuId = 1;
     
     this.base();
-    this.initPopups();
     
     if (!Ensembl.browser.ie) {
       $('pre > [title]', this.el).helptip({ track: true });
     }
-    
+   
+    $('.adornment',this.el).each(function() {
+      var $this = $(this);
+      $this.adorn(function(outer) {
+        var $outer = $(outer);
+        panel.initPopups($outer);
+        panel.updateKey($outer);
+        panel.fixKey($outer);
+        if(!$('.ajax_pending',this.el).length &&
+            !$('.ajax_load',this.el).length &&
+            !$('.sequence_key img',this.el).length) {
+//            panel.requestKey($this);
+        }
+      });
+    });
+
     this.el.on('mousedown', '.info_popup', function () {
       $(this).css('zIndex', ++Ensembl.PanelManager.zIndex);
     }).on('click', '.info_popup .close', function () {
@@ -46,52 +58,53 @@ Ensembl.Panel.TextSequence = Ensembl.Panel.Content.extend({
     });
   },
   
-  initPopups: function () {
-    var panel = this;
-    
-    $('.info_popup', this.el).hide();
-    
-    $('pre a.sequence_info', this.el).each(function () {
-      if (!panel.popups[this.href]) {
-        panel.popups[this.href] = 'zmenu_' + panel.id + '_' + (panel.zmenuId++);
+  updateKey: function(el) {
+    var $mydata = $('.sequence_key_json',el);
+    var mydata = JSON.parse($mydata.html()||false);
+    if(!mydata) { return; }
+    var $key = el.parents('.js_panel').find('.sequence_key');
+    if(!$key.length) { return; }
+    var alldata = $key.data('key') || {};
+    $.extend(true,alldata,mydata);
+    $key.data('key',alldata);
+    var params = [];
+    $.each(alldata,function(k,w) {
+      if(k == 'variations' || k == 'exons') {
+        $.each(w,function(v,i) { params.push(k+"="+v); });
+      } else {
+        params.push(k+'='+w);
       }
-      
-      $(this).data('menuId', panel.popups[this.href]); // Store a single reference <a> for all identical hrefs - don't duplicate the popups
+    });
+    params.sort();
+    var url = this.params.updateURL.replace(/sub_slice\?/,'key?'+';');
+    url += params.join(';');
+    $key.data('url',url);
+  },
+
+  fixKey: function(el) {
+    el.parents('.js_panel').find('._adornment_key').first().keepOnPage({marginTop: 10, spaced: true}).keepOnPage('trigger');
+  },
+
+  requestKey: function(el) {
+    var $key = el.parents('.js_panel').find('.sequence_key');
+    if(!$key.length) { return; }
+    this.getContent($key.data('url'),$key);
+  },
+
+  initPopups: function (el) {
+    var keys = [];
+    $('.info_popup',el).hide();
+   
+    $('pre a.sequence_info',el).each(function() {
+      if (!keys[this.href]) {
+        var zid = Ensembl.Panel.TextSequence.zmenuId++;
+        keys[this.href] = 'zmenu_' + zid;
+      }
+      $(this).data('menuId', keys[this.href]); // Store a single reference <a> for all identical hrefs - don't duplicate the popups
     });
   },
   
   makeZMenu: function (e, el) {
-    Ensembl.EventManager.trigger('makeZMenu', el.data('menuId'), { event: e, area: { a: el } });
-  },
-  
-  sequenceKey: function () {
-    if (!$('.sequence_key', this.el).length) {
-      var key = Ensembl.EventManager.trigger('getSequenceKey');
-      
-      if (!key) { 
-        return;
-      }
-      
-      var params = {};
-      
-      $.each(key, function (id, k) {
-        $.extend(true, params, k);
-      });
-      
-      var urlParams = $.extend({}, params, { variations: [], exons: [] });
-      
-      $.each([ 'variations', 'exons' ], function () {
-        for (var p in params[this]) {
-          urlParams[this].push(p);
-        }
-      });
-      
-      this.getContent(this.params.updateURL.replace(/sub_slice\?/, 'key?') + ';' + $.param(urlParams, true), this.el.parent().siblings('.sequence_key'));
-    }
-  },
-  
-  getSequenceKey: function () {
-    Ensembl.EventManager.unregister('ajaxComplete', this);
-    return JSON.parse($('.sequence_key_json', this.el).html() || false);
+    Ensembl.EventManager.trigger('makeZMenu', el.data('menuId'), { event: e, area: { link: el } });
   }
 });

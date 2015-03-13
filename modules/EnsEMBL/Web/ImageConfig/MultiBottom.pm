@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -61,12 +61,33 @@ sub init {
     decorations 
     information 
   ));
+
+  my $gencode_version = $self->hub->species_defs->GENCODE ? $self->hub->species_defs->GENCODE->{'version'} : '';
+  $self->add_track('transcript', 'gencode', "Basic Gene Annotations from GENCODE $gencode_version", '_gencode', {
+    labelcaption => "Genes (Basic set from GENCODE $gencode_version)",
+    display     => 'off',
+    description => 'The GENCODE set is the gene set for human and mouse. GENCODE Basic is a subset of representative transcripts (splice variants).',
+    sortable    => 1,
+    colours     => $self->species_defs->colour('gene'),
+    label_key  => '[biotype]',
+    logic_names => ['proj_ensembl',  'proj_ncrna', 'proj_havana_ig_gene', 'havana_ig_gene', 'ensembl_havana_ig_gene', 'proj_ensembl_havana_lincrna', 'proj_havana', 'ensembl', 'mt_genbank_import', 'ensembl_havana_lincrna', 'proj_ensembl_havana_ig_gene', 'ncrna', 'assembly_patch_ensembl', 'ensembl_havana_gene', 'ensembl_lincrna', 'proj_ensembl_havana_gene', 'havana'],
+    renderers   =>  [
+      'off',                     'Off',
+      'gene_nolabel',            'No exon structure without labels',
+      'gene_label',              'No exon structure with labels',
+      'transcript_nolabel',      'Expanded without labels',
+      'transcript_label',        'Expanded with labels',
+      'collapsed_nolabel',       'Collapsed without labels',
+      'collapsed_label',         'Collapsed with labels',
+      'transcript_label_coding', 'Coding transcripts only (in coding genes)',
+    ],
+  }) if($gencode_version);
   
   # Add in additional tracks
   $self->load_tracks;
   $self->load_configured_das;
   $self->image_resize = 1;
-    
+
   $self->add_tracks('sequence', 
     [ 'contig', 'Contigs',  'contig',   { display => 'normal', strand => 'r', description => 'Track showing underlying assembly contigs' }],
     [ 'seq',    'Sequence', 'sequence', { display => 'normal', strand => 'b', description => 'Track showing sequence in both directions. Only displayed at 1Kb and below.', colourset => 'seq', threshold => 1, depth => 1 }],
@@ -167,12 +188,11 @@ sub multi {
     [ 'gene_legend', 'Gene Legend','gene_legend', {  display => 'normal', strand => 'r', accumulate => 'yes' }],
     [ 'variation_legend', 'Variation Legend','variation_legend', {  display => 'normal', strand => 'r', accumulate => 'yes' }],
     [ 'fg_regulatory_features_legend',   'Reg. Features Legend', 'fg_regulatory_features_legend',   { display => 'normal', strand => 'r', colourset => 'fg_regulatory_features'   }],
-    [ 'fg_segmentation_features_legend', 'Reg. Segments Legend',          'fg_segmentation_features_legend', { strand => 'r', colourset => 'fg_segmentation_features' } ],
     [ 'fg_methylation_legend', 'Methylation Legend', 'fg_methylation_legend', { strand => 'r' } ],
     [ 'structural_variation_legend', 'Structural Variation Legend', 'structural_variation_legend', { strand => 'r' } ],
   );
   $self->modify_configs(
-    [ 'gene_legend', 'variation_legend','fg_regulatory_features_legend','fg_segmentation_features_legend', 'fg_methylation_legend', 'structural_variation_legend' ],
+    [ 'gene_legend', 'variation_legend','fg_regulatory_features_legend', 'fg_methylation_legend', 'structural_variation_legend' ],
     { accumulate => 'yes' }
   );
 }

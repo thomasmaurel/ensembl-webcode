@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ sub init {
   foreach (@{$self->entries}) {
     if (($type eq 'Config' && $_->{'id'} eq $config) || ($type eq 'UserData' && $_->{'id'} eq 'user_data')) {
       $_->{'class'} = 'active';
-      $self->active = 'modal_' . lc $_->{'id'};
+      $self->active('modal_' . lc $_->{'id'});
       last;
     }
   }

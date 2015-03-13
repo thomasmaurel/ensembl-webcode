@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ sub _init {
   my $self              = shift;
   my $config            = $self->{'config'};
   my $slice             = $self->{'container'}; 
-  my $target_feature_id = $self->{'config'}->core_objects->{'regulation'}->stable_id;  
+  my $target_feature_id = $self->{'config'}->core_object('regulation')->stable_id;  
   my $strand            = $self->strand; 
   my $colour            = 'lightcoral';
   my $x                 = 0;

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ limitations under the License.
 
 package EnsEMBL::Draw::GlyphSet::vcf;
 
-### Module for drawing data in BigBED format (either user-attached, or
+### Module for drawing data in VCF format (either user-attached, or
 ### internally configured via an ini file or database record
 
 use strict;
@@ -163,6 +163,7 @@ sub features {
       return 'too_many';
     } 
 
+    # If we have a variation db attached we can try and find a known SNP mapped at the same position
     # But at the moment we do not display this info so we might as well just use the faster method 
     #     my $vfa = $slice->_get_VariationFeatureAdaptor()->{list}->[0];
     

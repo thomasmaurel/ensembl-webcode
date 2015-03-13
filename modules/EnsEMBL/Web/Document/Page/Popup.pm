@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ sub initialize_HTML {
   return $self->initialize_JSON if $self->renderer->{'_modal_dialog_'};
   
   $self->include_navigation(1);
-  
+  $self->add_body_attr('class', 'pop');
+
   # General layout for popup pages
   $self->add_head_elements(qw(
     title      EnsEMBL::Web::Document::Element::Title

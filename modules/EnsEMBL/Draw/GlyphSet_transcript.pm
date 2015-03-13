@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -104,12 +104,16 @@ sub render_collapsed {
   $self->_init_bump;
   
   my ($genes, $highlights, $transcripts, $exons) = $self->features;
+  my $on_other_strand = 0;
   
   foreach my $gene (@$genes) {
     my $gene_stable_id = $gene->stable_id;
     my $gene_strand    = $gene->strand;
     
-    next if $gene_strand != $strand && $strand_flag eq 'b';
+    if ($gene_strand != $strand && $strand_flag eq 'b') { # skip features on wrong strand
+      $on_other_strand = 1;
+      next;
+    }
     
     $transcript_drawn = 1;
     
@@ -223,8 +227,8 @@ sub render_collapsed {
       priority => $self->_pos,
       legend   => \@legend
     };
-  } elsif ($config->get_option('opt_empty_tracks') != 0) {
-    $self->error_no_track_on_strand($self->error_track_name, $strand);
+  } elsif ($config->get_option('opt_empty_tracks') != 0 && !$on_other_strand) {
+    $self->no_track_on_strand;
   }
 }
 
@@ -264,12 +268,16 @@ sub render_transcripts {
   $self->_init_bump;
   
   my ($genes, $highlights, $transcripts, $exons) = $self->features;
+  my $on_other_strand = 0;
   
   foreach my $gene (@$genes) {
     my $gene_strand    = $gene->strand;
     my $gene_stable_id = $gene->can('stable_id') ? $gene->stable_id : undef;
     
-    next if $gene_strand != $strand && $strand_flag eq 'b'; # skip features on wrong strand
+    if ($gene_strand != $strand && $strand_flag eq 'b') { # skip features on wrong strand
+      $on_other_strand = 1;
+      next;
+    }
     next if $target_gene && $gene_stable_id ne $target_gene;
     
     my (%tags, @gene_tags, $tsid);
@@ -396,7 +404,7 @@ sub render_transcripts {
             my $fill_start = max($exon->start + $exons[$i][2], 1);
             my $fill_end   = min($exon->end   - $exons[$i][3], $length);
             
-            if ($fill_end > $fill_start) {
+            if ($fill_end >= $fill_start) {
               $composite2->push($self->Rect({
                 x         => $fill_start - 1,
                 y         => $y,
@@ -476,8 +484,8 @@ sub render_transcripts {
       priority => $self->_pos,
       legend   => \@legend
     };
-  } elsif ($config->get_option('opt_empty_tracks') != 0) {
-    $self->error_no_track_on_strand($self->error_track_name, $strand);
+  } elsif ($config->get_option('opt_empty_tracks') != 0 && !$on_other_strand) {
+    $self->no_track_on_strand;
   }
 }
 
@@ -731,7 +739,7 @@ sub render_alignslice_transcript {
       legend   => \@legend
     };
   } elsif ($config->get_option('opt_empty_tracks') != 0) {
-    $self->error_no_track_on_strand($self->error_track_name, $strand);
+    $self->no_track_on_strand;
   }
 }
 
@@ -859,7 +867,7 @@ sub render_alignslice_collapsed {
       legend   => \@legend
     };
   } elsif ($config->get_option('opt_empty_tracks') != 0) {
-    $self->error_no_track_on_strand($self->error_track_name, $strand);
+    $self->no_track_on_strand;
   }
 }
 
@@ -904,11 +912,15 @@ sub render_genes {
   my @genes_to_label;
   
   my ($genes, $highlights) = $self->features;
+  my $on_other_strand = 0;
   
   foreach my $gene (@$genes) {
     my $gene_strand = $gene->strand;
     
-    next if $gene_strand != $strand && $strand_flag eq 'b';
+    if ($gene_strand != $strand && $strand_flag eq 'b') { # skip features on wrong strand
+      $on_other_strand = 1;
+      next;
+    }
     
     my $colour_key     = $self->colour_key($gene);
     my $gene_col       = $self->my_colour($colour_key);
@@ -1092,7 +1104,10 @@ sub render_genes {
       }
     }
 
+    my %legend_old = @{$self->{'legend'}{'gene_legend'}{$self->type}{'legend'}||[]};
     my %used_colours;
+    $used_colours{$_} = $legend_old{$_} for keys %legend_old;
+
     $self->use_legend(\%used_colours,$_->{'colkey'}) for @genes_to_label;
 
     my @legend = %used_colours;
@@ -1100,9 +1115,9 @@ sub render_genes {
     $self->{'legend'}{'gene_legend'}{$self->type} = {
       priority => $self->_pos,
       legend   => \@legend
-    }
-  } elsif ($config->get_option('opt_empty_tracks') != 0) {
-    $self->error_no_track_on_strand($self->error_track_name, $strand);
+    };
+  } elsif ($config->get_option('opt_empty_tracks') != 0 && !$on_other_strand) {
+    $self->no_track_on_strand;
   }
 }
 
@@ -1457,9 +1472,6 @@ sub colour_key {
   return lc $pattern;
 }
 
-sub error_no_track_on_strand {
-  my ($self, $label, $strand) = @_;
-  return $self->errorTrack(sprintf 'No %s on %s strand in this region', $label, $strand == 1 ? 'forward' : 'reverse');
-}
+sub max_label_rows { return $_[0]->my_config('max_label_rows') || 2; }
 
 1;

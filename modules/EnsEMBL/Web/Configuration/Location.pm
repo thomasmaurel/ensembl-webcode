@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ sub populate_tree {
     { 'availability' => 'database:compara' }
   );
   
-  $align_menu->append($self->create_node('Compara_Alignments/Image', 'Alignments (image) ([[counts::alignments]])', 
+  $align_menu->append($self->create_node('Compara_Alignments/Image', 'Alignments (image)', 
     [qw(
       summary  EnsEMBL::Web::Component::Location::Summary
       top      EnsEMBL::Web::Component::Location::ViewTop
@@ -95,7 +95,7 @@ sub populate_tree {
     { 'availability' => 'slice database:compara has_alignments', 'concise' => 'Alignments (image)' }
   ));
   
-  $align_menu->append($self->create_node('Compara_Alignments', 'Alignments (text) ([[counts::alignments]])',
+  $align_menu->append($self->create_node('Compara_Alignments', 'Alignments (text)',
     [qw(
       summary    EnsEMBL::Web::Component::Location::Summary
       selector   EnsEMBL::Web::Component::Compara_AlignSliceSelector
@@ -105,7 +105,7 @@ sub populate_tree {
     { 'availability' => 'slice database:compara has_alignments', 'concise' => 'Alignments (text)' }
   ));
   
-  $align_menu->append($self->create_node('Multi', 'Region Comparison ([[counts::pairwise_alignments]])',
+  $align_menu->append($self->create_node('Multi', 'Region Comparison',
     [qw(
       summary  EnsEMBL::Web::Component::Location::MultiIdeogram
       selector EnsEMBL::Web::Component::Location::MultiSpeciesSelector
@@ -120,7 +120,7 @@ sub populate_tree {
     [qw( gen_alignment EnsEMBL::Web::Component::Location::ComparaGenomicAlignment )]
   ));
   
-  $align_menu->append($self->create_node('Synteny', 'Synteny ([[counts::synteny]])',
+  $align_menu->append($self->create_node('Synteny', 'Synteny',
     [qw(
       summary  EnsEMBL::Web::Component::Location::Summary
       image    EnsEMBL::Web::Component::Location::SyntenyImage
@@ -132,7 +132,7 @@ sub populate_tree {
   
   my $variation_menu = $self->create_submenu( 'Variation', 'Genetic Variation' );
   
-  $variation_menu->append($self->create_node('SequenceAlignment', 'Resequencing ([[counts::reseq_strains]])',
+  $variation_menu->append($self->create_node('SequenceAlignment', 'Resequencing',
     [qw(
       summary EnsEMBL::Web::Component::Location::Summary
       botnav  EnsEMBL::Web::Component::Location::ViewBottomNav
@@ -172,7 +172,7 @@ sub add_external_browsers {
   my $hub          = $self->hub;
   my $object       = $self->object;
   my $species_defs = $hub->species_defs;
-  
+
   # Links to external browsers - UCSC, NCBI, etc
   my %browsers = %{$species_defs->EXTERNAL_GENOME_BROWSERS || {}};
   $browsers{'UCSC_DB'} = $species_defs->UCSC_GOLDEN_PATH;
@@ -229,12 +229,78 @@ sub add_external_browsers {
   }
 
   $self->add_vega_link;
+  ## Link to previous/next assembly if available  
+  $self->add_archive_link if $hub->species_defs->SWITCH_ASSEMBLY;
   
   foreach (sort keys %browsers) {
     next unless $browsers{$_};
     
     $url = $hub->get_ExtURL($_, { CHR => $chr, START => $start, END => $end });
     $self->get_other_browsers_menu->append($self->create_node($browsers{$_}, $browsers{$_}, [], { url => $url, raw => 1, external => 1 }));
+  }
+}
+
+sub add_archive_link {
+### Optional link to archive with previous assembly
+  my $self           = shift;
+  my $hub            = $self->hub;
+  my $alt_assembly = $hub->species_defs->SWITCH_ASSEMBLY;
+  return unless $alt_assembly;
+  my $current_assembly = $hub->species_defs->ASSEMBLY_VERSION;
+  my $alt_release = $hub->species_defs->SWITCH_VERSION;
+  my $site = 'http://'.$hub->species_defs->SWITCH_ARCHIVE_URL;
+  my $external = 1;
+  my ($link, $title, $class);
+
+  if ($current_assembly ne $alt_assembly ) {
+  ## get coordinates on other assembly if available
+
+    if ($self->object && $self->object->slice) {
+      if (my @mappings = @{$hub->species_defs->get_config($hub->species, 'ASSEMBLY_MAPPINGS')||[]}) {
+        my $mapping;
+        foreach (@mappings) {
+          $mapping = $_; 
+          last if $mapping eq sprintf('chromosome:%s#chromosome:%s', $current_assembly, $alt_assembly);
+        }
+        if ($mapping) {
+          my $segments = $self->object->slice->project('chromosome', $alt_assembly);
+          ## link if there is an ungapped mapping
+          if (scalar(@$segments) == 1) {
+            my $new_slice = $segments->[0]->to_Slice;
+            $link = sprintf('%s%s/Location/%s?r=%s:%s-%s',
+                          $site,
+                          $hub->species_path,
+                          $hub->action,
+                          $new_slice->seq_region_name,
+                          $new_slice->start,
+                          $new_slice->end,
+                  );
+          }
+          elsif (scalar(@$segments) > 1) {
+            $external = 0;
+            $class = 'modal_link';
+            $link  = $self->hub->url({ type => 'Help', action => 'ListMappings', alt_assembly => $alt_assembly });
+          }
+        }
+        else {
+          $link = sprintf('%s/%s', $site, $hub->url());
+        }
+      }
+      else {
+        $link = sprintf('%s/%s', $site, $hub->url());
+      }
+      $title = $hub->species_defs->ENSEMBL_SITETYPE.' '.$alt_assembly;
+    }
+  }
+  else {
+
+    $link = sprintf('%s%s/Search/Results?q=%s',
+                    $site, $hub->species_path, $hub->param('r'),
+            );
+    $title = $hub->species_defs->ENSEMBL_SITETYPE.' '.$alt_assembly
+  }
+  if ($link) {
+    $self->get_other_browsers_menu->append($self->create_node($title, $title, [], { availability => 1, url => $link, raw => 1, external => $external, class => $class }));
   }
 }
 
@@ -254,7 +320,8 @@ sub add_vega_link {
     
     if ($object) {
       my $reg        = 'Bio::EnsEMBL::Registry';
-      my $orig_group = $reg->get_DNAAdaptor($species, 'vega')->group;
+      my $adaptor    = $reg->get_DNAAdaptor($species, 'vega');
+      my $orig_group = $adaptor->group;
       
       $reg->add_DNAAdaptor($species, 'vega', $species, 'vega');
          

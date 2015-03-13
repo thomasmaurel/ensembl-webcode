@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -85,6 +85,13 @@ sub populate_tree {
     ));
   }
 
+  $self->create_node('Expression', 'Gene Expression',
+    [qw(
+      rnaseq_table  EnsEMBL::Web::Component::Info::ExpressionTable
+    )],
+    { 'availability' => 'database:rnaseq' }
+  );
+
   my $stats_menu = $self->create_submenu('Stats', 'Genome Statistics');
   
   $stats_menu->append($self->create_node('StatsTable', 'Assembly and Genebuild',
@@ -94,8 +101,7 @@ sub populate_tree {
   $stats_menu->append($self->create_node('IPtop500', 'Top 500 InterPro hits',
     [qw(ip500 EnsEMBL::Web::Component::Info::IPtop500)]
   ));
-  my $version = $species_defs->ENSEMBL_VERSION;
-  $self->create_node('WhatsNew', "What's New in Release $version",
+  $self->create_node('WhatsNew', '',
     [qw(whatsnew EnsEMBL::Web::Component::Info::WhatsNew)]
   );
 
@@ -149,7 +155,7 @@ sub populate_tree {
     }
 
     if ($sample_data->{'REGULATION_PARAM'}){
-      my $regulation_url  = "$species_path/Regulation/Cell_line?fdb=funcgen;rf=$sample_data->{'REGULATION_PARAM'}";
+      my $regulation_url  = "$species_path/Regulation/Summary?fdb=funcgen;rf=$sample_data->{'REGULATION_PARAM'}";
       my $regulation_text = $sample_data->{'REGULATION_TEXT'} || 'not_available';
 
       $data_menu->append($self->create_node('Regulation', "Regulation ($regulation_text)", [],

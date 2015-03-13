@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -54,27 +54,35 @@ sub content {
       'For more information, visit the <a href="http://www.lrg-sequence.org">LRG website</a>.</p>';
   } else {
     my $lrg         = $object->Obj;
-    my $param       = $hub->param('lrg');
+    my $lrg_gene    = $hub->param('lrg');
     my $transcript  = $hub->param('lrgt');
-    (my $href       = $external_urls->{'LRG'}) =~ s/###ID###//;
-    my $description = qq{LRG region <a rel="external" href="$href">$param</a>.};
-    my @genes       = @{$lrg->get_all_Genes('LRG_import')||[]};
+    (my $href       = $external_urls->{'LRG'}) =~ s/###ID###/$lrg_gene/;
+    my $description = qq{LRG region <a rel="external" href="$href">$lrg_gene</a>.};
+    my @genes       = @{$lrg->get_all_Genes('lrg_import')||[]};
     my $display     = $genes[0]->display_xref();
+
+    my @hgnc_xrefs  = grep {$_->dbname =~ /hgnc/i} @{$genes[0]->get_all_DBEntries()}; # Retrieve the HGNC Xref
     my $slice       = $lrg->feature_Slice;
     my $source      = $genes[0]->source;
        $source      = 'LRG' if $source =~ /LRG/;
-    (my $source_url = $external_urls->{uc $source}) =~ s/###ID###//;
+    (my $source_url = $external_urls->{uc $source}) =~ s/\/###ID###//;
     
-    $description .= sprintf(
-      ' This LRG was created as a reference standard for the <a href="%s">%s</a> gene.',
-      $hub->url({
-        type   => 'Gene',
-        action => 'Summary',
-        g      => $display->display_id,
-      }),
-      $display->display_id
-    );
-    
+    if (scalar(@hgnc_xrefs)) {
+      my $hgnc = $hgnc_xrefs[0]->display_id;
+      $description .= sprintf(
+        ' This LRG was created as a reference standard for the <a href="%s">%s</a> gene.',
+        $hub->url({
+          type   => 'Gene',
+          action => 'Summary',
+          g      => $hgnc,
+        }),
+        $hgnc
+      );
+    }
+    else {
+      $description .= $display->description;
+    }
+ 
     $description  =~ s/EC\s+([-*\d]+\.[-*\d]+\.[-*\d]+\.[-*\d]+)/$self->EC_URL($1)/e;
     $description .= qq{ Source: <a rel="external" href="$source_url">$source</a>.} if $source_url;
     
@@ -93,7 +101,12 @@ sub content {
     
     my $transcripts = $lrg->get_all_Transcripts(undef, 'LRG_import'); 
 
-    my $count    = @$transcripts;
+    my %distinct_tr = map { $_->external_name => 1} @$transcripts;
+    if (scalar (keys(%distinct_tr)) == 0) {
+      %distinct_tr = map { $_->stable_id => 1} @$transcripts;
+    }
+
+    my $count  = scalar (keys(%distinct_tr));
     my $plural = 'transcripts';
     
     if ($count == 1) { 
@@ -106,7 +119,7 @@ sub content {
     my $show = (defined($tr_cookie) && $tr_cookie ne '' ) ? $tr_cookie eq 'open' : 'open';
 
     my $tr_line = $tr_html . sprintf(
-        ' <a rel="transcripts_table" class="button toggle no_img set_cookie %s" href="#" title="Click to toggle the transcript table">
+        ' <a rel="transcripts_table" class="button toggle _slide_toggle no_img set_cookie %s" href="#" title="Click to toggle the transcript table">
           <span class="closed">Show transcript table</span><span class="open">Hide transcript table</span>
         </a>',
         $show ? 'open' : 'closed'
@@ -163,14 +176,15 @@ sub transcript_table {
     
   my @rows;
     
-  foreach (map { $_->[2] } sort { $a->[0] cmp $b->[0] || $a->[1] cmp $b->[1] } map { [ $_->external_name, $_->stable_id, $_ ] } @$transcripts) {
+  foreach (map { $_->[2] } sort { $a->[0] cmp $b->[0] || $a->[1] cmp $b->[1] } map { [ $_->external_name, $_->display_id, $_ ] } @$transcripts) {
     my $transcript_length = $_->length;
+    my $t_label           = ($_->external_name && $_->external_name ne '') ? $_->external_name : $_->stable_id; # Because of LRG_321: several proteins per transcripti
     my $tsi               = $_->stable_id;
     my $protein           = 'No protein product';
     my $protein_length    = '-';
     my $ccds              = '-';
     my $cds_tag           = '-';
-    my $url               = $hub->url({ %url_params, t => $tsi });
+    my $url               = $hub->url({ %url_params, t => $tsi});
       
     if ($_->translation) {
       $protein = sprintf(
@@ -180,7 +194,7 @@ sub transcript_table {
           action => 'ProteinSummary',
           lrgt   => $tsi
         }),
-        $_->translation->stable_id
+        $_->translation->display_id
       );
         
       $protein_length = $_->translation->length;
@@ -201,7 +215,7 @@ sub transcript_table {
     }
       
     my $row = {
-      transcript => sprintf('<a href="%s">%s</a>', $hub->url({ %url_params, action => 'Sequence_cDNA', lrgt => $tsi }), $tsi),
+      transcript => sprintf('<a href="%s">%s</a>', $hub->url({ %url_params, action => 'Sequence_cDNA', lrgt => $tsi }), $t_label),
       bp_length  => $transcript_length,
       protein    => $protein,
       aa_length  => $protein_length,

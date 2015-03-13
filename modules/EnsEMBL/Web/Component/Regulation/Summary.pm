@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,42 +30,54 @@ sub _init {
   $self->ajaxable(  0 );
 }
 
-sub content {
-  my $self    = shift;
-  my $object  = $self->object;
-  my $summary = $self->new_twocol;
+sub _location_url {
+  my ($self,$start,$end) = @_;
 
+  my $object  = $self->object;
   my $url = $self->hub->url({
     'type'   => 'Location',
     'action' => 'View',
-    'r'      => $object->seq_region_name.':'.$object->bound_start.'-'.$object->bound_end
+    'r'      => $object->seq_region_name.':'.$start.'-'.$end
   });
 
   my $location_html = sprintf('<p><a href="%s" class="constant">%s: %s-%s</a></p>',
     $url,
     $object->neat_sr_name( $object->seq_region_type, $object->seq_region_name ),
-    $object->thousandify( $object->seq_region_start ),
-    $object->thousandify( $object->seq_region_end ),
+    $object->thousandify( $start ),
+    $object->thousandify( $end ),
   );
+}
 
-  $summary->add_row('Location', $location_html);
+sub content {
+  my $self    = shift;
+  my $object  = $self->object;
+  my $summary = $self->new_twocol;
 
-  ## TODO - use a simpler method to create simple tables
-  my $table = $self->dom->create_element('table', {'cellspacing' => '0', 'children' => [
-    {'node_name' => 'tr', 'children' => [ map {'node_name' => 'th', 'inner_text' => $_}, ('Cell line', 'Feature type', 'Bound co-ordinates') ]}
-  ]});
+  $self->nav_buttons;
+  my $location_html = $self->_location_url($object->seq_region_start,
+                                           $object->seq_region_end);
+  my $bound_html = $self->_location_url($object->bound_start,
+                                        $object->bound_end);
 
+  my %active;
   my $all_objs = $object->fetch_all_objs;
   foreach my $reg_object (sort { $a->feature_set->cell_type->name cmp $b->feature_set->cell_type->name } @$all_objs ) {
     next if $reg_object->feature_set->cell_type->name =~/MultiCell/;
-    $table->append_child('tr', {'children' => [map {'node_name' => 'td', 'style' => 'padding-right: 8px', 'inner_text' => $_},
-      $reg_object->feature_set->cell_type->name,
-      $reg_object->feature_type->name,
-      $reg_object->bound_start ."-". $reg_object->bound_end
-    ]});
+    $active{$reg_object->feature_set->cell_type->name} = 1 if $reg_object->can('has_evidence') and $reg_object->has_evidence;
+  }
+  my $num_active = scalar(grep { $_->feature_set->cell_type->name !~ /MultiCell/ } @$all_objs);
+
+  my @class = ($object->feature_type->name);
+  if(!$self->hub->is_new_regulation_pipeline) {
+    @class = grep { !/Unclassified/ } map { $_->feature_type->name } @$all_objs;
   }
 
-  $summary->add_row('', $table->render);
+  $summary->add_row('Classification',join(', ',@class));
+  $summary->add_row('Location', $location_html);
+  $summary->add_row('Bound region', $bound_html) if $location_html ne $bound_html;
+  if($self->hub->is_new_regulation_pipeline) {
+    $summary->add_row('Active in',$object->cell_type_count."/$num_active <small>(".join(', ',sort keys %active).")</small>");
+  }
 
   return $summary->render;
 }

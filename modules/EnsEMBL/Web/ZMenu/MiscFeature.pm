@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,12 +34,12 @@ sub content {
   $self->caption("$caption: $name");
   
   $self->add_entry({
-    type  => 'bp',
+    type  => 'Range',
     label => $mf->seq_region_start . '-' . $mf->seq_region_end
   });
   
   $self->add_entry({
-    type  => 'length',
+    type  => 'Length',
     label => $mf->length . ' bps'
   });
   
@@ -90,7 +90,7 @@ sub content {
   }
   
   $self->add_entry({
-    label => "Center on $caption",
+    label => "Centre on $caption",
     link  => $hub->url({
       type   => 'Location', 
       action => 'View'

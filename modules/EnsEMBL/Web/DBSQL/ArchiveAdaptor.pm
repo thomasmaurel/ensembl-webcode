@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ sub fetch_releases {
   my @args;
   my $sql = qq(
     SELECT
-      number, date, archive, online
+      release_id, number, date, archive, online, description
     FROM
       ens_release
   );
@@ -92,23 +92,25 @@ sub fetch_releases {
   my $records = [];
   while (my @data = $sth->fetchrow_array()) {
     push @$records, {
-      'id'      => $data[0],
-      'date'    => $data[1],
-      'archive' => $data[2],
-      'online'  => $data[3],
+      'id'          => $data[0],
+      'version'     => $data[1],
+      'date'        => $data[2],
+      'archive'     => $data[3],
+      'online'      => $data[4],
+      'description' => $data[5],
     };
   }
   return $records;
 }
 
-sub fetch_archives {
+sub fetch_archive_assemblies {
   my ($self, $first_archive) = @_;
   return unless $self->db;
   
   my @args;
   my $sql = qq(
     SELECT
-      r.number, r.date, r.archive, s.species_id, s.name, rs.assembly_name
+      s.name, s.common_name, r.number, rs.assembly_name
     FROM
       ens_release as r,
       species as s,
@@ -124,22 +126,98 @@ sub fetch_archives {
     );
     @args = ($first_archive);
   }
-  $sql .= qq(
+
+  my $sth = $self->db->prepare($sql);
+  $sth->execute(@args);
+
+  my $records = {};
+  while (my @data = $sth->fetchrow_array()) {
+    $records->{$data[0]}{$data[2]} = {
+      'common_name'     => $data[1],
+      'assembly'        => $data[3],
+    };
+  }
+  return $records;
+}
+
+sub fetch_archives_by_species {
+  my ($self, $species) = @_;
+  return unless $self->db && $species;
+  my $records = {};
+  
+  my @args = ('Y', $species);
+
+  ## First check for special archives
+  my $sql = qq(
+    SELECT
+      r.release_id, r.date, r.archive, r.description, 
+      rs.assembly_name, rs.assembly_version, rs.initial_release, rs.last_geneset
+    FROM
+      ens_release as r,
+      species as s,
+      release_species as rs
+    WHERE  
+      r.number = rs.release_id
+    AND
+      s.species_id = rs.species_id
+    AND
+      r.release_id > 10000
+    AND
+      r.online = ?
+    AND
+      s.name = ?
     ORDER BY r.release_id DESC
   );
 
   my $sth = $self->db->prepare($sql);
   $sth->execute(@args);
 
-  my $records = [];
   while (my @data = $sth->fetchrow_array()) {
-    push @$records, {
-      'id'            => $data[0],
-      'date'          => $data[1],
-      'archive'       => $data[2],
-      'species_id'    => $data[3],
-      'species_name'  => $data[4],
-      'assembly'      => $data[5],
+    $records->{$data[0]} = {
+      'date'            => $data[1],
+      'archive'         => $data[2],
+      'description'     => $data[3],
+      'assembly'        => $data[4],
+      'version'         => $data[5],
+      'initial_release' => $data[6],
+      'last_geneset'    => $data[7],
+    };
+  }
+
+  ## Now get ordinary archives
+  $sql = qq(
+    SELECT
+      r.number, r.date, r.archive, r.description, 
+      rs.assembly_name, rs.assembly_version, rs.initial_release, rs.last_geneset
+    FROM
+      ens_release as r,
+      species as s,
+      release_species as rs
+    WHERE
+      r.release_id = rs.release_id
+    AND
+      r.release_id < 10000
+    AND
+      s.species_id = rs.species_id
+    AND
+      r.online = ?
+    AND
+      s.name = ?
+    ORDER BY r.release_id DESC
+  );
+
+  $sth = $self->db->prepare($sql);
+  $sth->execute(@args);
+
+  while (my @data = $sth->fetchrow_array()) {
+    $records->{$data[0]} = {
+      'date'            => $data[1],
+      'archive'         => $data[2],
+      'description'     => $data[3],
+      'assembly'        => $data[4],
+      'version'         => $data[5],
+      'initial_release' => $data[6],
+      'last_geneset'    => $data[7],
     };
   }
   return $records;

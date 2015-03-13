@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ sub get {
   my $file = $obj->full_path;
 
   my $content = '';
-  if ($obj->compress || $obj->extension =~ /gz$/) {
+  if (($obj->compress || $obj->extension =~ /gz$/) && !$obj->get_compressed) {
     my $gz = gzopen( $file, 'rb' )
          or warn "GZ Cannot open $file: $gzerrno\n";
     if ($gz) {

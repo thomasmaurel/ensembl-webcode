@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -41,8 +41,6 @@ sub init {
   $defaults->{"phylopan_$_"}   = 'yes' for qw(cdna aligned);
   $defaults->{"phyloxml_$_"}   = 'no'  for qw(no_sequences);
   $defaults->{"phylopan_$_"}   = 'no'  for qw(no_sequences);
-  $defaults->{"orthoxml_$_"}   = 'yes' for qw(possible_orthologs);
-  $defaults->{"orthopan_$_"}   = 'yes' for qw(possible_orthologs);
   $defaults->{'fasta_genomic'} = 'unmasked';
   
   foreach my $f (qw(csv tab gff)) {
@@ -113,21 +111,21 @@ sub form {
       type  => 'NoEdit',
       name  => 'gene_to_export',
       label => 'Gene to export',
-      value => $hub->core_objects->{'gene'}->long_caption
+      value => $hub->core_object('gene')->long_caption
     });
   } elsif ($function eq 'Transcript') {    
     $self->add_form_element({
       type  => 'NoEdit',
       name  => 'transcript_to_export',
       label => 'Transcript to export',
-      value => $hub->core_objects->{'transcript'}->long_caption
+      value => $hub->core_object('transcript')->long_caption
     });
   } elsif ($function eq 'Variation') {
     $self->add_form_element({
       type  => 'NoEdit',
       name  => 'variation_to_export',
       label => 'Variation to export',
-      value => $hub->core_objects->{'variation'}->name,
+      value => $hub->core_object('variation')->name,
     });
   }
 

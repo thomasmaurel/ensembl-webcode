@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ use Digest::MD5 qw(md5_hex);
 use URI::Escape qw(uri_escape);
 
 use EnsEMBL::Web::Data::Session;
-use EnsEMBL::Web::TmpFile::Text;
+use EnsEMBL::Web::File::User;
 
 use base qw(EnsEMBL::Web::Component::UserData);
 
@@ -56,21 +56,43 @@ sub content {
       { key => 'type',    title => 'Type',         width => '10%', align => 'left'                                  },
       { key => 'name',    title => 'Source',       width => '40%', align => 'left', sort => 'html', class => 'wrap' },
       { key => 'species', title => 'Species',      width => '20%', align => 'left', sort => 'html'                  },
+      { key => 'assembly', title => 'Assembly',      width => '20%', align => 'left', sort => 'html'                  },
       { key => 'date',    title => 'Last updated', width => '20%', align => 'left', sort => 'numeric_hidden'        },
     );
     
     push @columns, ({ key => 'actions', title => 'Actions', width => '120px', align => 'center', sort => 'none' });
-    
+   
+    my $old_assemblies = 0; 
     foreach my $file (@data) {
+      my @assemblies = split(', ', $file->{'assembly'});
+      ## check if we have current assemblies
+      $old_assemblies++ if (scalar(@assemblies) < 1); 
+      foreach (@assemblies) {
+        $old_assemblies++ if ($_ ne $hub->species_defs->get_config($file->{'species'}, 'ASSEMBLY_VERSION'));
+      }
       my $user_record = ref($file) =~ /Record/;
       my $sharers     = $file->{'code'} =~ /_$session_id$/ ? EnsEMBL::Web::Data::Session->count(code => $file->{'code'}, type => $file->{'type'}) : 0;
          $sharers-- if $sharers && !$file->{'user_id'}; # Take one off for the original user
-      
-      if ($file->{'filename'} && !EnsEMBL::Web::TmpFile::Text->new(filename => $file->{'filename'}, $file->{'prefix'} ? (prefix => $file->{'prefix'}) : (), extension => $file->{'extension'})->exists) {
-        $file->{'name'} .= ' (File could not be found)';
-        $not_found++;
+     
+      if ($file->{'filename'}) {
+        my %args = (
+                    'hub'             => $hub, 
+                    'file'            => $file->{'file'}, 
+                    'extension'       => $file->{'extension'}
+                    );
+        if ($file->{'prefix'}) {
+          $args{'prefix'} = $file->{'prefix'};
+        }
+        else {
+          $args{'read_datestamp'} = $file->{'datestamp'};
+        }
+        my $user_file = EnsEMBL::Web::File::User->new(%args);
+        if (!$user_file->exists) {
+          $file->{'name'} .= ' (File could not be found)';
+          $not_found++;
+        }
       }
-      
+
       my $row = ref($file) =~ /DAS/ || $user_record && $file->type eq 'das' ? $self->table_row_das($file, $user_record) : $self->table_row($file, $sharers);
       
       my ($type, $id) = $file->{'analyses'} =~ /^(session|user)_(\d+)_/;
@@ -88,14 +110,17 @@ sub content {
       
       push @rows, $row;
     }
-    
     $html = $self->new_table(\@columns, \@rows, { data_table => 'no_col_toggle', exportable => 0, class => 'fixed editable' })->render;
+    if ($old_assemblies) {
+      my $plural = $old_assemblies > 1 ? '' : 's';
+      $html .= $self->warning_panel('Possible mapping issue', "$old_assemblies of your files contain$plural data on an old or unknown assembly. You may want to convert your data and re-upload, or try an archive site.");
+    }
   }
   
   $html  .= $self->group_shared_data;
   $html  .= $self->_warning('File not found', sprintf('<p>The file%s marked not found %s unavailable. Please try again later.</p>', $not_found == 1 ? ('', 'is') : ('s', 'are')), '100%') if $not_found;
   $html ||= '<p class="space-below">You have no custom data.</p>';
-  $html  .= sprintf '<p><a href="%s" class="modal_link" rel="modal_user_data"><img src="/i/16/page-user.png" style="margin-right:8px;vertical-align:middle;" />Add a custom track</a></p>', $hub->url({'action'=>'SelectFile'});
+  $html  .= sprintf '<p><a href="%s" class="modal_link" rel="modal_user_data"><img src="/i/16/page-user.png" style="margin-right:8px;vertical-align:middle;" />Add your data</a></p>', $hub->url({'action'=>'SelectFile'});
   $html  .= '<div class="modal_reload"></div>' if $hub->param('reload');
 
   my $group_sharing_info = scalar @temp_data && $user && $user->find_admin_groups ? '<p>Please note that you cannot share temporary data with a group until you save it to your account.</p>' : '';
@@ -149,10 +174,11 @@ sub table_row {
   my $delete       = $self->_icon({ link_class => $delete_class, class => 'delete_icon', link_extra => $title });
   my $share        = $self->_icon({ link_class => 'modal_link',  class => 'share_icon' });
   my $download     = $self->_no_icon;
+  my $conf_template = $self->_no_icon;
   my $user_record  = ref($file) =~ /Record/;
   my $name         = qq{<div><strong class="val" title="Click here to rename your data">$file->{'name'}</strong>};
   my %url_params   = ( __clear => 1, source => $file->{'url'} ? 'url' : 'upload' );
-  my $save;
+  my ($save, $assembly);
   
   if ($file->{'prefix'} && $file->{'prefix'} eq 'download') {
     my $format   = $file->{'format'} eq 'report' ? 'txt' : $file->{'format'};
@@ -160,10 +186,12 @@ sub table_row {
   }
   
   if ($user_record) {
+    $assembly = $file->assembly || 'Unknown';
     $url_params{'id'} = join '-', $file->id, md5_hex($file->code);
     $save = $self->_icon({ no_link => 1, class => 'sprite_disabled save_icon', title => 'Saved data' });
   } else {
-    
+    $assembly = $file->{'assembly'} || 'Unknown';    
+
     $url_params{'code'} = $file->{'code'};
 
     if ($hub->users_available) {
@@ -220,7 +248,29 @@ sub table_row {
   }
   
   $name .= $file->{'url'} || sprintf '%s file', $file->{'filetype'} || $file->{'format'};
-  
+
+  ## Link for valid datahub  
+  my ($config_link, $conf_template);
+  if ($file->{'format'} eq 'DATAHUB' && $hub->species_defs->get_config($file->{'species'}, 'ASSEMBLY_VERSION') eq $file->{'assembly'}) {
+    $conf_template  = $self->_icon({ class => 'config_icon', 'title' => 'Configure hub tracks for '.$hub->species_defs->get_config($file->{'species'}, 'SPECIES_COMMON_NAME') });
+    my $sample_data = $hub->species_defs->get_config($file->{'species'}, 'SAMPLE_DATA') || {};
+    my $default_loc = $sample_data->{'LOCATION_PARAM'};
+    (my $menu_name = $file->{'name'}) =~ s/ /_/g;
+    $config_link = $hub->url({
+        species  => $file->{'species'},
+        type     => 'Location',
+        action   => 'View',
+        function => undef,
+        r        => $hub->param('r') || $default_loc,
+    });
+    ## Add menu name here, as we need it in icon link, below this block
+    $config_link .= '#modal_config_viewbottom-'.$menu_name;
+    $name .= sprintf('<br /><a href="%s">Configure hub</a>',
+      $config_link,
+    );
+  }
+
+  my $config_html = $config_link ? sprintf $conf_template, $config_link : '';
   my $share_html  = sprintf $share,  $hub->url({ action => 'SelectShare', %url_params });
   my $delete_html = sprintf $delete, $hub->url({ action => 'ModifyData', function => $file->{'url'} ? 'delete_remote' : 'delete_upload', %url_params });
   
@@ -228,8 +278,9 @@ sub table_row {
     type    => $file->{'url'} ? 'URL' : 'Upload',
     name    => { value => $name, class => 'wrap editable' },
     species => sprintf('<em>%s</em>', $hub->species_defs->get_config($file->{'species'}, 'SPECIES_SCIENTIFIC_NAME')),
+    assembly => $assembly,
     date    => sprintf('<span class="hidden">%s</span>%s', $file->{'timestamp'} || '-', $self->pretty_date($file->{'timestamp'}, 'simple_datetime')),
-    actions => "$download$save$share_html$delete_html",
+    actions => "$config_html$download$save$share_html$delete_html",
   };
 }
 

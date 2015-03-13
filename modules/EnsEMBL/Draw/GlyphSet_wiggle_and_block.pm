@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -98,7 +98,9 @@ sub _render {
   
   return unless $error && $self->{'config'}->get_option('opt_empty_tracks') == 1;
   
-  my $height = $self->errorTrack("No $error in this region", 0, $self->_offset);
+  my $here = $self->my_config('strand') eq 'b' ? 'on this strand' : 'in this region';
+
+  my $height = $self->errorTrack("No $error $here", 0, $self->_offset);
   $self->_offset($height + 4);
   
   return 1;
@@ -182,6 +184,48 @@ sub draw_block_features {
   return 1;
 }
 
+sub add_legend_box {
+  my ($self,$click_text,$content,$y) = @_;
+
+  my %font_details = $self->get_font_details('innertext', 1);
+  my @text = $self->get_text_width(0,$click_text, '', %font_details);
+  my ($width,$height) = @text[2,3];
+  # add colour key legend
+  $self->push($self->Rect({
+    width         => $width + 15,
+    absolutewidth => $width + 15,
+    height        => $height + 2,
+    y             => $y,
+    x             => -119,
+    absolutey     => 1,
+    absolutex     => 1,
+    title         => join('; ',@$content),
+    class         => 'coloured',
+    bordercolour  => '#336699',
+    colour        => 'white',
+  }), $self->Text({
+    text      => $click_text,
+    height    => $height,
+    halign    => 'left',
+    valign    => 'bottom',
+    colour    => '#336699',
+    y         => $y,
+    x         => -118,
+    absolutey => 1,
+    absolutex => 1,
+    %font_details,
+  }), $self->Triangle({
+    width     => 6,
+    height    => 5,
+    direction => 'down',
+    mid_point => [ -123 + $width + 10, $y + 10 ],
+    colour    => '#336699',
+    absolutex => 1,
+    absolutey => 1,
+  }));
+  return $height+4;
+}
+
 sub draw_wiggle_plot {
   ### Wiggle plot
   ### Args: array_ref of features in score order, colour, min score for features, max_score for features, display label
@@ -190,7 +234,7 @@ sub draw_wiggle_plot {
 
   my ($self, $features, $parameters, $colours, $labels) = @_; 
   my $slice         = $self->{'container'};
-  my $row_height    = $self->{'height'} || $self->my_config('height') || 60;
+  my $row_height    = $self->my_config('height') || 60;
   my $max_score     = $parameters->{'max_score'};
   my $min_score     = $parameters->{'min_score'};
   my $axis_style    = $parameters->{'graph_type'} eq 'line' ? 0 : 1;
@@ -204,7 +248,7 @@ sub draw_wiggle_plot {
   my $pix_per_score = $max_score == $min_score ? $self->label->height : $row_height / max($max_score - $min_score, 1);
   my $top_offset    = 0;
   my $initial_offset= $self->_offset;
-  my $bottom_offset = $max_score == $min_score ? 0 : (($max_score - ($min_score < 0 ? $min_score : 0)) || 1) * $pix_per_score;
+  my $bottom_offset = $max_score == $min_score ? 0 : (($max_score - ($min_score > 0 ? $min_score : 0)) || 1) * $pix_per_score;
   my $zero_offset   = $max_score * $pix_per_score;
   
   # Draw the labels
@@ -214,7 +258,7 @@ sub draw_wiggle_plot {
     my $y            = $self->_offset;
     my $y_offset     = 0;
     my %font_details = $self->get_font_details('innertext', 1);
-    my @res_analysis = $self->get_text_width(0, 'Legend', '', %font_details);
+    my @res_analysis = $self->get_text_width(0,'Legend & More', '', %font_details);
     my $max          = scalar @$labels - 1;
     my ($legend_alt_text, %seen);
     
@@ -249,41 +293,14 @@ sub draw_wiggle_plot {
     
     $legend_alt_text =~ s/,$//;
     $y              += 13;
-    
-    # add colour key legend
-    $self->push($self->Rect({
-      width         => $res_analysis[2] + 15,
-      absolutewidth => $res_analysis[2] + 15,
-      height        => $res_analysis[3] + 2,
-      y             => $y,
-      x             => -109,
-      absolutey     => 1,
-      absolutex     => 1,
-      title         => "$header_label; [$legend_alt_text ]",
-      class         => 'coloured',
-      bordercolour  => '#336699',
-      colour        => 'white',
-    }), $self->Text({
-      text      => 'Legend',
-      height    => $res_analysis[3],
-      halign    => 'left',
-      valign    => 'bottom',
-      colour    => '#336699',
-      y         => $y,
-      x         => -108,
-      absolutey => 1,
-      absolutex => 1,
-      %font_details,
-    }), $self->Triangle({
-      width     => 6,
-      height    => 5,
-      direction => 'down',
-      mid_point => [ -113 + $res_analysis[2] + 10, $y + 10 ],
-      colour    => '#336699',
-      absolutex => 1,
-      absolutey => 1,
-    }));
-    
+
+    my $zmenu_title = join(', ',$header_label,
+                           @{$parameters->{'zmenu_extra_title'}||[]});
+    my $zmenu_content = [$zmenu_title,"[ $legend_alt_text ]",
+                             @{$parameters->{'zmenu_extra_content'}||[]}];
+    my $zmenu_click = $parameters->{'zmenu_click_text'} || 'Legend';
+    $self->add_legend_box($zmenu_click,$zmenu_content,$y);
+ 
     $y_offset   += 12;
     $top_offset += 15;
     
@@ -295,7 +312,7 @@ sub draw_wiggle_plot {
     my $height        = [ $self->get_text_width(0, 1, '', %font) ]->[3];
     my $label_height  = 0;
     $label_height = $self->label->height if($self->label);
-    $bottom_offset = max($bottom_offset, $top_offset + $label_height + (2 * $height));
+    $bottom_offset = max($bottom_offset, $top_offset + $label_height + $height);
     $pix_per_score = $bottom_offset / (($max_score - ($min_score < 0 ? $min_score : 0)) || 1);
     $zero_offset   = $max_score * $pix_per_score;
     
@@ -328,7 +345,7 @@ sub draw_wiggle_plot {
       }));
     }
     
-    $self->{'label_y_offset'} = ($zero_offset - $height)/2;
+    $self->{'label_y_offset'} = $top_offset+($zero_offset/2)-$label_height/2;
   }
   
   # Draw the axis
@@ -396,8 +413,8 @@ sub draw_wiggle_points {
   my $zero      = $top_offset + $zero_offset;
   
   foreach my $f (@$features) {
-    my ($start, $end, $score, $min_score, $height, $width, $x);
-    my $href        = ref $f ne 'HASH' && $f->can('id') ? $hrefs->{$f->id} : '';
+    my ($start, $end, $score, $min_score, $height, $width, $x, $y);
+    my $href        = ref $f ne 'HASH' && $f->can('display_id') ? $hrefs->{$f->display_id} : '';
     my $this_colour = $colour;
     
     if ($parameters->{'use_feature_colours'} && $f->can('external_data')) {
@@ -433,22 +450,29 @@ sub draw_wiggle_points {
     
     foreach ([ $score, $this_colour ], $min_score ? [ $min_score, 'steelblue' ] : ()) {
       $height = ($max_score ? min($_->[0], $max_score) : $_->[0]) * $pix_per_score;
-      
+      $y      = $zero - max($height, 0);
+      $height = $points ? 0 : abs $height;
+
       $self->push($self->Rect({
-        y         => $zero - max($height, 0),
-        height    => $points ? 0 : abs $height,
+        y         => $y,
+        height    => $height,
         x         => $x,
         width     => $width,
         absolutey => 1,
         colour    => $_->[1],
+        alpha     => $parameters->{'use_alpha'} ? 0.5 : 0,
         title     => $parameters->{'no_titles'} ? undef : sprintf('%.2f', $_->[0]),
         href      => $href,
       }));
     }
+
+    # If 'bumped' flag is on, this bumping is different than bumping on other tracks since this one only adds
+    # an offset to the y coords to the next rectangle to be drawn so it doesn't overlap with the previous one
+    $zero -= $height + 2 if $parameters->{'bumped'};
   }
 
   return 1;
-} 
+}
 
 sub draw_wiggle_points_as_line {
   my ($self, $features, $slice, $parameters, $top_offset, $pix_per_score, $colour, $zero_offset) = @_;
@@ -542,8 +566,8 @@ sub draw_track_name {
 }
 
 sub display_no_data_error {
-  my ($self, $error_string) = @_;
-  my $height = $self->errorTrack($error_string, 0, $self->_offset);
+  my ($self, $error_string,$mild) = @_;
+  my $height = $self->errorTrack($error_string, 0, $self->_offset,$mild);
   $self->_offset($height + 4); 
 }
 

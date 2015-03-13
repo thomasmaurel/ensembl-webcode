@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ limitations under the License.
 =cut
 
 package EnsEMBL::Draw::GlyphSet::_variation;
+
+### Draws a SNP track
 
 use strict;
 
@@ -70,7 +72,15 @@ sub features {
     $self->errorTrack("Variation features are not displayed for regions larger than ${max_length}Kb");
     return [];
   } else {
-    return $self->fetch_features;
+    my $features_list = $self->fetch_features;
+    if (!scalar(@$features_list)) {
+      my $track_name = $self->my_config('name'); 
+      $self->errorTrack("No $track_name data for this region");
+      return [];
+    }
+    else {
+      return $features_list;
+    }
   }
 }
 
@@ -78,7 +88,7 @@ sub check_set {
   my ($self, $f, $sets) = @_; 
   
   foreach (@{$f->get_all_VariationSets}) {
-    return 1 if $sets->{$_->name};
+    return 1 if $sets->{$_->short_name};
   }
   
   return 0;
@@ -117,7 +127,7 @@ sub fetch_features {
       } elsif ($self->my_config('source')) {
         @somatic_mutations = @{$slice->get_all_somatic_VariationFeatures_by_source($self->my_config('source'), undef, $var_db) || []};
       } else { 
-        @somatic_mutations = @{$slice->get_all_somatic_VariationFeatures($var_db) || []};
+        @somatic_mutations = @{$slice->get_all_somatic_VariationFeatures(undef, undef, undef, $var_db) || []};
       }
       
       $self->cache($id, \@somatic_mutations);   
@@ -130,8 +140,9 @@ sub fetch_features {
       my @vari_features;
       
       if ($id =~ /set/) {
+        my $short_name = ($self->my_config('sets'))->[0];
         my $track_set  = $self->my_config('set_name');
-        my $set_object = $variation_db_adaptor->get_VariationSetAdaptor->fetch_by_name($track_set);
+        my $set_object = $variation_db_adaptor->get_VariationSetAdaptor->fetch_by_short_name($short_name);
     
         # Enable the display of failed variations in order to display the failed variation track
         $variation_db_adaptor->include_failed_variations(1) if $track_set =~ /failed/i;
@@ -334,8 +345,8 @@ sub highlight {
   my ($f, $composite, $pix_per_bp, $h, $hi_colour) = @_;
   my %highlights = map { $_ => 1 } $self->highlights;
 
-  if ($self->{'config'}->core_objects->{'variation'}){
-    my $var_id = $self->{'config'}->core_objects->{'variation'}->name;
+  if ($self->{'config'}->core_object('variation')){
+    my $var_id = $self->{'config'}->core_object('variation')->name;
        $var_id =~ s/rs//;
        
     $highlights{$var_id} = 1;

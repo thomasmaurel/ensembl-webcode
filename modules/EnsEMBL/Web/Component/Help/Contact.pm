@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ sub content {
   my @A = split('/', $path);
   my $source = $A[-1];
 
-  my $form      = $self->new_form({'id' => 'contact', 'action' => "/Help/SendEmail", 'method' => 'post', 'enctype'=>'multipart/form-data'});
+  my $form      = $self->new_form({'id' => 'contact', 'action' => "/Help/SendEmail", 'method' => 'post', 'enctype'=>'multipart/form-data', 'data-ajax'=>'false'});
   my $fieldset  = $form->add_fieldset;
 
   if ($hub->param('strong')) {
@@ -76,6 +76,7 @@ sub content {
     'name'    => 'message',
     'label'   => 'Message',
     'value'   => $hub->param('message') || '',
+    'notes'   => 'Tip: drag the bottom righthand corner to make this box bigger.',
   }, {
     'type'    => 'File',
     'name'    => 'attachment',
@@ -98,6 +99,8 @@ sub content {
     'name'    => 'submit',
     'value'   => 'Send',
   });
+  
+  $_->set_attribute('data-role', 'none') for @{$fieldset->get_elements_by_tag_name('input')};
 
   return $form->render;
 }

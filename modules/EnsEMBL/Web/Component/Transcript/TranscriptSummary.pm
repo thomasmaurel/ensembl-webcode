@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ limitations under the License.
 package EnsEMBL::Web::Component::Transcript::TranscriptSummary;
 
 use strict;
+use HTML::Entities  qw(encode_entities);
 
 use base qw(EnsEMBL::Web::Component::Transcript);
 
@@ -42,9 +43,12 @@ sub content {
   my $coding_exons = @{$transcript->get_all_translateable_Exons};
   my $basepairs    = $self->thousandify($transcript->seq->length);
   my $residues     = $translation ? $self->thousandify($translation->length) : 0;
-  my @CCDS         = grep $_->dbname eq 'CCDS', @{$transcript->get_all_DBLinks};
+  my @CCDS         = @{$transcript->get_all_DBLinks('CCDS')};
+  my @Uniprot      = @{$transcript->get_all_DBLinks('Uniprot/SWISSPROT')};
+  my ($tsl)        = @{$transcript->get_all_Attributes('TSL')};
   my $html         = "<strong>Exons:</strong> $exons <strong>Coding exons:</strong> $coding_exons <strong>Transcript length:</strong> $basepairs bps";
   $html           .= " <strong>Translation length:</strong> $residues residues" if $residues;
+  my %glossary     = $hub->species_defs->multiX('ENSEMBL_GLOSSARY');
 
   $table->add_row('Statistics', $html);
 
@@ -54,7 +58,18 @@ sub content {
     @CCDS = sort keys %T;
     $table->add_row('CCDS', sprintf('<p>This transcript is a member of the %s CCDS set: %s</p>', $sp, join ', ', map $hub->get_ExtURL_link($_, 'CCDS', $_), @CCDS));
   }
+  ## add Uniprot info
+  if (scalar @Uniprot) {
+    my %T = map { $_->primary_id => 1 } @Uniprot;
+    @Uniprot = sort keys %T;
+    $table->add_row('Uniprot', sprintf('<p>This transcript corresponds to the following Uniprot identifiers: %s</p>', join ', ', map $hub->get_ExtURL_link($_, 'Uniprot/SWISSPROT', $_), @Uniprot));
+  }
 
+  ## add TSL info
+  if ($tsl && ($tsl = $tsl->value)) {  
+    my $key = $tsl =~ s/^tsl([^\s]+).*$/TSL$1/gr;     
+    $table->add_row('Transcript Support Level (TSL)', sprintf('<span class="ts_flag _ht"><span class="glossary_mouseover" title="%s">%s</span></span>', encode_entities($glossary{$key}), $key =~ s/TSL/TSL\:/gr));
+  }
   $table->add_row('Ensembl version', $object->stable_id.'.'.$object->version);
 
   ## add some Vega info
@@ -85,7 +100,7 @@ sub content {
     $table->add_row('Type', $type) if $type;
   }
   ## add prediction method
-  my $label = ($db eq 'vega' || $species_defs->ENSEMBL_SITETYPE eq 'Vega' ? 'Curation' : 'Prediction') . ' Method';
+  my $label = ($db eq 'vega' || $species_defs->ENSEMBL_SITETYPE eq 'Vega' ? 'Curation' : 'Annotation') . ' Method';
   my $text  = "No $label defined in database";
 
   eval {
@@ -170,7 +185,7 @@ sub content {
   my $cv_terms = $object->get_cv_terms;
   if (@$cv_terms) {
     my $first = shift @$cv_terms;
-    my $text = qq(<p>$first [<a href="/info/about/annotation_attributes.html">Definitions</a>]</p>);
+    my $text = qq(<p>$first [<a href="http://vega.sanger.ac.uk/info/about/annotation_attributes.html" target="external" class="constant">Definitions</a>]</p>);
     foreach my $next (@$cv_terms) {
       $text .= "<p>$next</p>";
     }

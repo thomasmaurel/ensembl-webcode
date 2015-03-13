@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@ limitations under the License.
 =cut
 
 package EnsEMBL::Draw::GlyphSet::missing;
+
+### AS FAR AS I CAN TELL, THIS GLYPHSET IS NOT IN CURRENT USE - THE
+### 'TURNED OFF' MESSAGE IS RENDERED USING THE text.pm GLYPHSET
 
 ### Displays a message at the bottom of configurable images, showing
 ### the number of tracks that are currently turned off

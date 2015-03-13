@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ use Bio::EnsEMBL::ExternalData::BigFile::BigBedAdaptor;
 
 use base qw(Bio::EnsEMBL::ExternalData::AttachedFormat);
 
+use EnsEMBL::Web::File::Utils::URL qw(chase_redirects);
+
 sub new {
   my $self = shift->SUPER::new(@_);
   return $self;
@@ -47,6 +49,7 @@ sub check_data {
   my $error = '';
   require Bio::DB::BigFile;
 
+  $url = chase_redirects($url, {'hub' => $self->{'hub'}});
   if ($url =~ /^ftp:\/\//i && !$self->{'hub'}->species_defs->ALLOW_FTP_BIGWIG) {
     $error = "The BigBed file could not be added - FTP is not supported, please use HTTP.";
   }
@@ -93,8 +96,12 @@ sub _calc_style {
   } elsif($tl_score == 4) {
     return 'wiggle';
   } elsif($tl_score == 0) {
+    # Explicit: try autosql
+    my $bba = $self->_bigbed_adaptor;
+    return 'colour' if defined $bba->has_column('item_colour');
+    return 'score'  if defined $bba->has_column('score');
     # Implicit: No help from trackline, have to work it out
-    my $line_length = $self->_bigbed_adaptor->file_bedline_length;
+    my $line_length = $bba->file_bedline_length;
     if($line_length >= 8) {
       return 'colour';      
     } elsif($line_length >= 5) {

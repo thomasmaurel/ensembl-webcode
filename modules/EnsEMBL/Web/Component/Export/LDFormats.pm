@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -51,8 +51,11 @@ sub content {
   }
   
   $form->add_notes({ class => undef, list => \@list });
-  
-  return '<h2>Export Configuration - Linkage Disequilibrium Data</h2>' . $form->render;
+ 
+  my ($chr, $start, $end) = split(':|-', $hub->param('r'));
+  my $warning = $end - $start >= 2e4 ? $self->warning_panel('Large region', 'Please note: <b>haploview export</b> for regions over 20kb may fail to load owing to data density.') : '';
+ 
+  return '<h2>Export Configuration - Linkage Disequilibrium Data</h2>' . $form->render . $warning;
 }
 
 sub get_formats {

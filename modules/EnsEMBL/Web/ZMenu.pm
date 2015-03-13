@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -56,6 +56,12 @@ sub object {
   return $self->{'object'};
 }
 
+sub header {
+  my $self = shift;
+  $self->{'header'} = shift if @_;
+  return $self->{'header'};
+}
+
 sub caption {
   my $self = shift;
   $self->{'feature'}{'caption'}      = shift if @_;
@@ -83,13 +89,22 @@ sub new_feature {
   push @{$self->{'features'}}, $self->{'feature'};
 }
 
-sub click_location { return map { $_[0]->hub->param("click_$_") || () } qw(chr start end); }
+sub click_location { 
+  my $self  = shift;
+  my @coords = map { $self->hub->param("fake_click_$_") || $self->hub->param("click_$_") || () } qw(chr start end); 
+  if ($coords[1] =~ /,/) {
+    my ($start) = split(',', $coords[1]); 
+    my @ends   = split(',', $coords[2]); 
+    @coords = ($coords[0], $start, $ends[-1]);
+  }
+  return @coords;
+}
 
 sub click_data {
   my $self  = shift;
   my $hub   = $self->hub;
   my @click = $self->click_location;
-  
+
   if (scalar @click == 3) {
     my $image_config = $hub->get_imageconfig($hub->param('config'));
     my $node         = $image_config ? $image_config->get_node($hub->param('track')) : undef;
@@ -195,7 +210,7 @@ sub render {
             '<a href="%s"%s%s>%s%s%s</a>',
             encode_entities(decode_entities($entry->{'link'})), # Decode links before encoding them stops double encoding when the link is created by EnsEMBL::Web::ExtURL->get_url
             $entry->{'external'} ? ' rel="external"' : '',
-            $entry->{'link_class'} ? qq{ class="$entry->{'link_class'}"} : '',
+            $entry->{'link_class'} ? qq( class="$entry->{'link_class'}") : '',
             encode_entities($entry->{'label'}),
             $entry->{'label_html'},
             $entry->{'update_params'},
@@ -217,7 +232,7 @@ sub render {
     }
   }
   
-  print $self->jsonify(\@features);
+  print $self->jsonify({'header' => $self->header, 'features' => \@features});
 }
 
 1;

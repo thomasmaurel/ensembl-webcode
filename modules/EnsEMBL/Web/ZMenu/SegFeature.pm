@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ package EnsEMBL::Web::ZMenu::SegFeature;
 
 use strict;
 
-use base qw(EnsEMBL::Web::ZMenu);
+use base qw(EnsEMBL::Web::ZMenu::RegulationBase);
 
 sub content {
   my $self              = shift;
@@ -55,7 +55,8 @@ sub content {
     type        => 'Analysis',
     label_html  => $seg_feat->analysis->description,
   });
-      
+
+  $self->_add_nav_entries;      
 }
 
 1;

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -347,7 +347,7 @@ sub _parse_HTML_to_nodes {
       'string'  => $1,
       'start'   => $-[1],
       'end'     => $+[1],
-      'name'    => $3,
+      'name'    => lc $3,
       'type'    => $2 eq '' ? $7 eq '' ? 'start_tag' : 'selfclosing_tag' : 'end_tag',
       'attr'    => {}
     };

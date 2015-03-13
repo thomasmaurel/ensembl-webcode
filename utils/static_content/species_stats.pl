@@ -1,18 +1,4 @@
 #!/usr/bin/env perl
-# Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-# 
-#      http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 
 ##############################################################################
 #
@@ -35,7 +21,7 @@ use File::Basename qw( dirname );
 
 use Pod::Usage;
 use Getopt::Long;
-use JSON;
+#use JSON::Parse qw /json_to_perl valid_json/;
 use List::MoreUtils qw /first_index/;
 use HTML::Entities qw(encode_entities);
 
@@ -66,7 +52,7 @@ BEGIN{
 
   $SCRIPT_ROOT = dirname( $Bin );
   ($SERVERROOT = $SCRIPT_ROOT) =~ s#/utils##;
-  my $plugin = $PRE ? '/sanger-plugins/pre' : '/public-plugins/ensembl';
+  my $plugin = $PRE ? '/../sanger-plugins/pre' : '/../public-plugins/ensembl';
   $PLUGIN_ROOT ||= $SERVERROOT.$plugin;
 
   unless( $PLUGIN_ROOT =~ /^\// ){ # Relative path
@@ -221,100 +207,261 @@ foreach my $spp (@valid_spp) {
 
 ##----------------------- NASTY RAW SQL STUFF! ------------------------------
 
-    my (%gene_stats, %alt_gene_stats, %other_stats);
-    my $genome_container = $db_adaptor->get_GenomeContainer();
-    my $analysis_adaptor = $db_adaptor->get_AnalysisAdaptor();
-    my $attribute_adaptor = $db_adaptor->get_AttributeAdaptor();
+    my (%gene_stats, %other_stats);
 
+    my @gene_stats_keys   = qw(coding shortnoncoding longnoncoding pseudogene transcript);
+    my @alt_gene_stats_keys = qw(alt_coding alt_shortnoncoding alt_longnoncoding alt_pseudogene alt_transcript);
+
+    my @other_stats_keys  = qw(genpept genfpept fgenpept snps strucvar);
+
+    my %glossary          = $SD->multiX('ENSEMBL_GLOSSARY');
+ 
     my %glossary_lookup   = (
       'coding'              => 'Protein coding',
       'alt_coding'          => 'Protein coding',
-      'shortnoncoding'      => 'Short non coding gene',
-      'alt_shortnoncoding'  => 'Short non coding gene',
-      'longnoncoding'       => 'Long non coding gene',
-      'alt_longnoncoding'   => 'Long non coding gene',
+      'shortnoncoding'      => 'Short Non coding',
+      'alt_shortnoncoding'  => 'Short Non coding',
+      'longnoncoding'       => 'Long Non coding',
+      'alt_longnoncoding'   => 'Long Non coding',
       'pseudogene'          => 'Pseudogene',
       'alt_pseudogene'      => 'Pseudogene',
       'transcript'          => 'Transcript',
       'alt_transcript'      => 'Transcript',
     );
 
-    my %glossary          = $SD->multiX('ENSEMBL_GLOSSARY');
-    my @gene_keys = ('coding', 'shortnoncoding', 'longnoncoding', 'pseudogene', 'transcript');
-    my @alt_gene_keys = ('alt_coding', 'alt_shortnoncoding', 'alt_longnoncoding', 'alt_pseudogene', 'alt_transcript');
-    my %title;
+    my %gene_title        = (
+      'coding'              => 'Coding genes',
+      'shortnoncoding'      => 'Short Non coding genes',
+      'longnoncoding'       => 'Long Non coding genes',
+      'pseudogene'          => 'Pseudogenes',
+      'transcript'          => 'Gene transcripts'
+    );
+
+    my %alt_gene_title        = (
+      'alt_coding'          => 'Coding genes',
+      'alt_shortnoncoding'  => 'Short Non coding genes',
+      'alt_longnoncoding'   => 'Long Non coding genes',
+      'alt_pseudogene'      => 'Pseudogenes',
+      'alt_transcript'      => 'Gene transcripts'
+    );
+
+    my %other_title       = (
+      'genpept'             => 'Genscan gene predictions',
+      'genfpept'            => 'Genefinder gene predictions',
+      'fgenpept'            => 'FGENESH gene predictions',
+      'snps'                => 'Short Variants (SNPs, indels, somatic mutations)',
+      'strucvar'            => 'Structural variants'
+    );
 
     unless ($pre) { 
 ###
 
-      ($gene_stats{'coding'}) = $genome_container->get_coding_count() if $genome_container->get_coding_count();
-      $title{'coding'} = $genome_container->get_attrib('coding_cnt')->name() if $genome_container->get_coding_count();
+      ($gene_stats{'coding'}) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'coding_cnt'
+        ");
       print STDERR "Coding:$gene_stats{'coding'}\n" if $DEBUG;
 
-      ($alt_gene_stats{'alt_coding'}) = $genome_container->get_alt_coding_count() if $genome_container->get_alt_coding_count();
-      $title{'alt_coding'} = $genome_container->get_attrib('coding_acnt')->name() if $genome_container->get_alt_coding_count();
-      print STDERR "Alternate coding:$alt_gene_stats{'alt_coding'}\n" if $DEBUG;
+      ($gene_stats{'alt_coding'}) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'coding_acnt'
+        ");
+      print STDERR "Alternate coding:$gene_stats{'alt_coding'}\n" if $DEBUG;
 
-      ($gene_stats{'shortnoncoding'}) = $genome_container->get_snoncoding_count() if $genome_container->get_snoncoding_count();
-      $title{'shortnoncoding'} = $genome_container->get_attrib('snoncoding_cnt')->name() if $genome_container->get_snoncoding_count();
+
+
+###
+
+      ($gene_stats{'shortnoncoding'}) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'snoncoding_cnt'
+        ");
       print STDERR "Non coding:$gene_stats{'shortnoncoding'}\n" if $DEBUG;
 
-      ($gene_stats{'longnoncoding'}) = $genome_container->get_lnoncoding_count() if $genome_container->get_lnoncoding_count();
-      $title{'longnoncoding'} = $genome_container->get_attrib('lnoncoding_cnt')->name() if $genome_container->get_lnoncoding_count();
+      ($gene_stats{'longnoncoding'}) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'lnoncoding_cnt'
+        ");
       print STDERR "Non coding:$gene_stats{'longnoncoding'}\n" if $DEBUG;
 
-      ($alt_gene_stats{'alt_shortnoncoding'}) = $genome_container->get_alt_snoncoding_count() if $genome_container->get_alt_snoncoding_count();
-      $title{'alt_shortnoncoding'} = $genome_container->get_attrib('snoncoding_acnt')->name() if $genome_container->get_alt_snoncoding_count();
-      print STDERR "Alternate non coding:$alt_gene_stats{'alt_shortnoncoding'}\n" if $DEBUG;
+      ($gene_stats{'alt_shortnoncoding'}) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'snoncoding_acnt'
+        ");
+      print STDERR "Alternate non coding:$gene_stats{'alt_shortnoncoding'}\n" if $DEBUG;
 
-      ($alt_gene_stats{'alt_longnoncoding'}) = $genome_container->get_alt_lnoncoding_count() if $genome_container->get_alt_lnoncoding_count();
-      $title{'alt_longnoncoding'} = $genome_container->get_attrib('lnoncoding_acnt')->name() if $genome_container->get_alt_lnoncoding_count();
-      print STDERR "Alternate non coding:$alt_gene_stats{'alt_longnoncoding'}\n" if $DEBUG;
+      ($gene_stats{'alt_longnoncoding'}) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'lnoncoding_acnt'
+        ");
+      print STDERR "Alternate non coding:$gene_stats{'alt_longnoncoding'}\n" if $DEBUG;
 
-      ( $gene_stats{'pseudogene'} ) = $genome_container->get_pseudogene_count() if $genome_container->get_pseudogene_count();
-      $title{'pseudogene'} = $genome_container->get_attrib('pseudogene_cnt')->name();
+###
+
+      ( $gene_stats{'pseudogene'} ) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'pseudogene_cnt'
+        ");    
       print STDERR "Pseudogenes:$gene_stats{'pseudogene'}\n" if $DEBUG;
 
-      ( $alt_gene_stats{'alt_pseudogene'} ) = $genome_container->get_alt_pseudogene_count() if $genome_container->get_alt_pseudogene_count();
-      $title{'alt_pseudogene'} = $genome_container->get_attrib('pseudogene_acnt')->name() if $genome_container->get_alt_pseudogene_count();
-      print STDERR "Alternate pseudogenes:$alt_gene_stats{'alt_pseudogene'}\n" if $DEBUG;
-
-      ( $gene_stats{'transcript'} ) = $genome_container->get_transcript_count() if $genome_container->get_transcript_count();
-      $title{'transcript'} = $genome_container->get_attrib('transcript')->name() if $genome_container->get_transcript_count();
-      print STDERR "Transcripts:$gene_stats{'transcript'}\n" if $DEBUG;
-
-      ( $alt_gene_stats{'alt_transcript'} ) = $genome_container->get_alt_transcript_count() if $genome_container->get_alt_transcript_count();
-      $title{'alt_transcript'} = $genome_container->get_attrib('transcript')->name() if $genome_container->get_alt_transcript_count();
-      print STDERR "Transcripts:$alt_gene_stats{'alt_transcript'}\n" if $DEBUG;
-
-      ($other_stats{'snps'}) = $genome_container->get_short_variation_count() if $genome_container->get_short_variation_count;
-      $title{'snps'} = $genome_container->get_attrib('short_variation_cnt')->name() if $genome_container->get_short_variation_count;
-      print STDERR "SNPs, etc:$other_stats{'snps'}\n" if $DEBUG;
-
-      ($other_stats{'strucvar'}) = $genome_container->get_structural_variation_count() if $genome_container->get_structural_variation_count();
-      $title{'structvar'} = $genome_container->get_attrib('structural_variation_cnt')->name() if $genome_container->get_structural_variation_count();
-      print STDERR "Structural variations:$other_stats{'strucvar'}\n" if $DEBUG;
-
+      ( $gene_stats{'alt_pseudogene'} ) = &query( $db,
+        "select sum(value)
+        from seq_region_attrib sa, attrib_type at,
+             seq_region s, coord_system cs
+        where species_id=$spp_id
+        and at.attrib_type_id = sa.attrib_type_id
+        and s.seq_region_id = sa.seq_region_id
+        and cs.coord_system_id = s.coord_system_id
+        and code = 'pseudogene_acnt'
+        ");
+      print STDERR "Alternate pseudogenes:$gene_stats{'alt_pseudogene'}\n" if $DEBUG;
 
     } #unless pre
 
-    my @analyses = @{ $analysis_adaptor->fetch_all_by_feature_class('PredictionTranscript') };
-    foreach my $analysis (@analyses) {
-      my $logic_name = $analysis->logic_name;
-      $other_stats{$logic_name} = $genome_container->get_prediction_count($logic_name);
-      $title{$logic_name} = $attribute_adaptor->fetch_by_code($logic_name)->[2];
-      print STDERR "$logic_name:$other_stats{$logic_name}\n" if $DEBUG;
+    ## DO OTHER RAW QUERIES
+    ( $other_stats{'genpept'} ) = &query( $db,
+    "select count( distinct p.prediction_transcript_id )
+      from prediction_transcript p, analysis a, seq_region sr, coord_system cs
+      where p.seq_region_id = sr.seq_region_id
+      and sr.coord_system_id = cs.coord_system_id
+      and cs.species_id=$spp_id
+      and p.analysis_id = a.analysis_id
+      and a.logic_name = 'Genscan'
+    ");
+    print STDERR "Genscans:$other_stats{'genpept'}\n" if $DEBUG;
+
+    ( $other_stats{'genfpept'} ) = &query( $db,
+    "select count( distinct p.prediction_transcript_id )
+      from prediction_transcript p, analysis a, seq_region sr, coord_system cs
+      where p.seq_region_id = sr.seq_region_id
+      and sr.coord_system_id = cs.coord_system_id
+      and cs.species_id=$spp_id
+      and p.analysis_id = a.analysis_id
+      and a.logic_name = 'Genefinder'
+    ");
+    print STDERR "Genefinder:$other_stats{'genfpept'}\n" if $DEBUG;
+
+    ( $other_stats{'fgenpept'} ) = &query( $db,
+    "select count( distinct p.prediction_transcript_id )
+      from prediction_transcript p, analysis a, seq_region sr, coord_system cs
+      where p.seq_region_id = sr.seq_region_id
+      and sr.coord_system_id = cs.coord_system_id
+      and cs.species_id=$spp_id
+      and p.analysis_id = a.analysis_id
+      and a.logic_name like '%fgenesh%'
+    ");
+    print STDERR "Fgenesh:$other_stats{'fgenpept'}\n" if $DEBUG;
+
+    unless ($pre) {
+        ( $gene_stats{'transcript'} )= &query( $db,
+          "select count(distinct t.transcript_id)
+           from transcript t
+           join seq_region sr using (seq_region_id)
+           join coord_system cs using (coord_system_id)
+           where cs.species_id=$spp_id 
+           and t.seq_region_id not in (
+             select sa.seq_region_id
+             from seq_region_attrib sa
+             join attrib_type at using (attrib_type_id) 
+             where at.code = 'non_ref'
+           )"
+        );
+      print STDERR "Transcripts:$gene_stats{'transcript'}\n" if $DEBUG;
+
+        ( $gene_stats{'alt_transcript'} )= &query( $db,
+          "select count(distinct t.transcript_id)
+          from transcript t, seq_region_attrib sa, attrib_type at, seq_region sr, coord_system cs
+          where t.seq_region_id = sa.seq_region_id
+          and sa.attrib_type_id = at.attrib_type_id
+          and sr.coord_system_id = cs.coord_system_id
+          and cs.species_id=$spp_id
+          and sr.seq_region_id = sa.seq_region_id
+          and t.biotype not in ('LRG_gene')
+          and at.code = 'non_ref'"
+        );
+      print STDERR "Transcripts:$gene_stats{'alt_transcript'}\n" if $DEBUG;
+
+      $other_stats{'snps'}      = 0;
+      $other_stats{'strucvar'}  = 0;
+      if ($var_db) {
+        ($other_stats{'snps'}) = &query ( $var_db, "SELECT COUNT(DISTINCT variation_id) FROM variation_feature");
+        print STDERR "SNPs, etc:$other_stats{'snps'}\n" if $DEBUG;
+        ($other_stats{'strucvar'}) = &query ( $var_db, "SELECT COUNT(DISTINCT structural_variation_id) FROM structural_variation");
+        print STDERR "Structural variations:$other_stats{'strucvar'}\n" if $DEBUG;
+      }
     }
 
     ## Total number of base pairs
-    my ( $bp ) = $genome_container->get_total_length();
-    $title{'total_length'} = $genome_container->get_attrib('total_length')->name();
-    print STDERR $title{'total_length'} . ": $bp.\n" if $DEBUG;
+
+    my ( $bp ) = &query( $db,
+      "select sum(length(sequence))
+      from dna 
+        join seq_region using (seq_region_id)
+        join coord_system using (coord_system_id)
+      where species_id=$spp_id"
+    );
+
+    print STDERR "Total base pairs: $bp.\n" if $DEBUG;
 
     ## Golden path length
-    my ( $gpl ) = $genome_container->get_ref_length();
-    $title{'ref_length'} = $genome_container->get_attrib('ref_length')->name();
-    print STDERR $title{'ref_length'} . ": $gpl.\n" if $DEBUG;
+
+    my ( $gpl ) = &query( $db,
+      "SELECT sum(length) 
+        FROM seq_region sr, seq_region_attrib sra, attrib_type at, coord_system cs 
+        WHERE sr.seq_region_id = sra.seq_region_id
+          AND sra.attrib_type_id = at.attrib_type_id 
+          AND sr.coord_system_id = cs.coord_system_id 
+          AND cs.species_id = $spp_id
+          AND at.code = 'toplevel' 
+          AND cs.name != 'lrg' 
+          AND sr.seq_region_id NOT IN 
+            (SELECT DISTINCT seq_region_id FROM assembly_exception ae WHERE ae.exc_type != 'par' )
+        "
+    );
+
+    print STDERR "Golden path length: $gpl.\n" if $DEBUG;
 
 
     ##-----------------------List all coord systems region counts----------------
@@ -389,18 +536,16 @@ foreach my $spp (@valid_spp) {
 
     $bp   = thousandify($bp);
     $row  = stripe_row($rowcount);
-    my $title = $title{'total_length'};
     print STATS qq($row
-          <td class="data">$title:</td>
+          <td class="data">Base Pairs:</td>
           <td class="value">$bp</td>
       </tr>);
 
     $rowcount++;
     $gpl  = thousandify($gpl);
     $row  = stripe_row($rowcount);
-    $title = $title{'ref_length'};
     print STATS qq($row
-          <td class="data">$title:</td>
+          <td class="data">Golden Path Length:</td>
           <td class="value">$gpl</td>
       </tr>
     );
@@ -434,20 +579,23 @@ foreach my $spp (@valid_spp) {
  
       my $primary = $gene_stats{'alt_coding'} ? ' (Primary assembly)' : '';
       my $any_genes = 0;
-      if($gene_stats{'coding'}){
+      for (@gene_stats_keys){
+         if($gene_stats{$_}){$any_genes += $gene_stats{$_}};
+      }
+      if($any_genes){
         print STATS qq(
           <h3>Gene counts$primary</h3>
           <table class="ss tint species-stats">
         );
         $rowcount = 0;
 
-        for (@gene_keys) {
+        for (@gene_stats_keys) {
           if ($gene_stats{$_}) {
             $gene_stats{$_} = thousandify($gene_stats{$_});
             $rowcount++;
             $row = stripe_row($rowcount);
             my $term = $glossary_lookup{$_};
-            my $header = $term ? qq(<span class="glossary_mouseover">$title{$_}<span class="floating_popup">$glossary{$term}</span></span>) : $title{$_};
+            my $header = $term ? qq(<span class="glossary_mouseover">$gene_title{$_}<span class="floating_popup">$glossary{$term}</span></span>) : $gene_title{$_};
             print STATS qq($row
               <td class="data">$header:</td>
               <td class="value">$gene_stats{$_}</td>
@@ -460,7 +608,7 @@ foreach my $spp (@valid_spp) {
           </table>
         );
 
-        if ($alt_gene_stats{'alt_coding'}) {
+        if ($gene_stats{'alt_coding'}) {
         print STATS qq(
           <h3>Gene counts (Alternate sequences)</h3>
           <table class="ss tint species-stats">
@@ -468,16 +616,16 @@ foreach my $spp (@valid_spp) {
         $rowcount = 0;
         }
 
-        for (@alt_gene_keys) {
-          if ($alt_gene_stats{$_}) {
-            $alt_gene_stats{$_} = thousandify($alt_gene_stats{$_});
+        for (@alt_gene_stats_keys) {
+          if ($gene_stats{$_}) {
+            $gene_stats{$_} = thousandify($gene_stats{$_});
             $rowcount++;
             $row = stripe_row($rowcount);
             my $term = $glossary_lookup{$_};
-            my $header = $term ? qq(<span class="glossary_mouseover">$title{$_}<span class="floating_popup">$glossary{$term}</span></span>) : $title{$_};
+            my $header = $term ? qq(<span class="glossary_mouseover">$alt_gene_title{$_}<span class="floating_popup">$glossary{$term}</span></span>) : $alt_gene_title{$_};
             print STATS qq($row
               <td class="data">$header:</td>
-              <td class="value">$alt_gene_stats{$_}</td>
+              <td class="value">$gene_stats{$_}</td>
               </tr>
             );
           }
@@ -496,8 +644,7 @@ foreach my $spp (@valid_spp) {
 
     $db->dbc->db_handle->disconnect; # prevent too many connections
 
-    my @other_stats_keys = keys %other_stats;
-    if(@other_stats_keys){
+    if(grep $other_stats{$_}, @other_stats_keys){
 
       print STATS qq(
         <h3>Other</h3>
@@ -505,15 +652,17 @@ foreach my $spp (@valid_spp) {
       );
       $rowcount = 0;
 
-      for my $key (@other_stats_keys) {
-        $other_stats{$key} = thousandify($other_stats{$key});
-        $rowcount++;
-        $row = stripe_row($rowcount);
-        print STATS qq($row
-          <td class="data">$title{$key}:</td>
-          <td class="value">$other_stats{$key}</td>
-          </tr>
-        );
+      for (@other_stats_keys) {
+        if ($other_stats{$_}) {
+          $other_stats{$_} = thousandify($other_stats{$_});
+          $rowcount++;
+          $row = stripe_row($rowcount);
+          print STATS qq($row
+            <td class="data">$other_title{$_}:</td>
+            <td class="value">$other_stats{$_}</td>
+            </tr>
+          );
+        }
       }
 
       print STATS '</table>';
@@ -529,6 +678,22 @@ foreach my $spp (@valid_spp) {
 exit;
 
 
+
+#############################################################################
+sub query_status { my( $db, $SQL ) = @_;
+   my $sth = $db->dbc->prepare($SQL);
+   $sth->execute();
+   my @Q;
+   my ($status, $count);
+   while ( ($status, $count) = $sth->fetchrow_array() ) 
+   {
+     my $stat = [ $status, $count ];
+     push @Q, $stat;
+   }
+
+   $sth->finish;
+   return \@Q;
+}
 
 
 sub query { my( $db, $SQL ) = @_;
@@ -606,7 +771,7 @@ sub do_pan_compara_species {
     }
 
     my $html;
-    $html .= qq(<a href="/info/genome/compara/pan.nh" class="constant">Species Newick Tree</a><br><br>);
+    $html .= qq(<a href="/info/docs/compara/pan.nh" class="constant">Species Newick Tree</a><br><br>);
     $html .= qq{<table>};
     foreach my $key ( sort { $a cmp $b} keys %division){
 
@@ -618,7 +783,6 @@ sub do_pan_compara_species {
 
       ## Reset total to number of cells required for a complete table
       $total = $break * 3;
-      my @all_under_division_sorted = sort {$a cmp $b} @{$division{$key}};
 
       for (my $i=0; $i < $total; $i++) {
         my $col = int($i % 3);
@@ -628,7 +792,7 @@ sub do_pan_compara_species {
 	      my $row = int($i/3);
 	      my $j = $row + $break * $col;
 
-        my $current_species =  defined $all_under_division_sorted[$j] ? $all_under_division_sorted[$j] : '' ;
+        my $current_species =  defined $division{$key}->[$j] ? $division{$key}->[$j] : '' ;
         my $species = $spec_sci_name{$current_species} || $current_species;
         my $url_hash        = $SD->ENSEMBL_EXTERNAL_URLS($current_species) || $SD->ENSEMBL_EXTERNAL_URLS;
 
@@ -1116,12 +1280,11 @@ sub get_resources {
   open FILE, "<".$SiteDefs::ENSEMBL_SERVERROOT."/eg-plugins/common/htdocs/species_metadata.json";
   my $file_contents = do { local $/; <FILE> };
   close FILE;
-  
-  my $data;
-  
-  eval { $data = from_json($file_contents); };
-  
-  return $data->{genome} unless $@;
+
+  if (valid_json ($file_contents)) {
+    my $data = json_to_perl ($file_contents);
+    return $data->{genome};
+  }
 }
 
 

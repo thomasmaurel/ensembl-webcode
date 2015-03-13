@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -53,8 +53,9 @@ sub createObjects {
   
   if ($regulation) {
     my $context = $self->param('context') || 1000;
-    
-    $self->DataObjects($self->new_object('Regulation', $regulation, $self->__data));
+   
+    my $obj = $self->new_object('Regulation', $regulation, $self->__data);
+    $self->DataObjects($obj);
     $self->generate_object('Location', $regulation->feature_Slice->expand($context, $context));
   } else {
     return $self->problem('fatal', "Could not find regulatory feature $rf", $self->_help("Either $rf does not exist in the current Ensembl database, or there was a problem retrieving it."));
@@ -66,7 +67,7 @@ sub _help {
 
   my %sample    = %{$self->species_defs->SAMPLE_DATA || {}};
   my $help_text = $string ? sprintf '<p>%s</p>', encode_entities($string) : '';
-  my $url       = $self->hub->url({ __clear => 1, action => 'Cell_line', rf => $sample{'REGULATION_PARAM'} });
+  my $url       = $self->hub->url({ __clear => 1, action => 'Summary', rf => $sample{'REGULATION_PARAM'} });
   
   $help_text .= sprintf('
   <p>

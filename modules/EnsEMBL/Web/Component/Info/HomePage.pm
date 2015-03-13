@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,12 +23,21 @@ use strict;
 use EnsEMBL::Web::Document::HTML::HomeSearch;
 use EnsEMBL::Web::DBSQL::ProductionAdaptor;
 
-use base qw(EnsEMBL::Web::Component);
+use parent qw(EnsEMBL::Web::Component::Info);
 
 sub _init {
   my $self = shift;
   $self->cacheable(0);
   $self->ajaxable(0);
+}
+
+sub ftp_url {
+### Set this via a function, so it can easily be updated (or 
+### overridden in a plugin)
+  my $self = shift;
+  my $ftp_site = $self->hub->species_defs->ENSEMBL_FTP_URL;
+  return $ftp_site ? sprintf '%s/release-%s', $ftp_site, $self->hub->species_defs->ENSEMBL_VERSION
+                      : undef;
 }
 
 sub content {
@@ -39,8 +48,8 @@ sub content {
   my $common_name  = $species_defs->SPECIES_COMMON_NAME;
   my $display_name = $species_defs->SPECIES_SCIENTIFIC_NAME;
   
-  $self->{'icon'}     = qq{<img src="${img_url}24/%s.png" alt="" class="homepage-link" />};
-  $self->{'img_link'} = qq{<a class="nodeco _ht _ht_track" href="%s" title="%s"><img src="${img_url}96/%s.png" alt="" class="bordered" />%s</a>};
+  $self->{'icon'}     = qq(<img src="${img_url}24/%s.png" alt="" class="homepage-link" />);
+  $self->{'img_link'} = qq(<a class="nodeco _ht _ht_track" href="%s" title="%s"><img src="${img_url}96/%s.png" alt="" class="bordered" />%s</a>);
   
   return sprintf('
     <div class="column-wrapper">  
@@ -88,37 +97,41 @@ sub whats_new_text {
     my $changes = EnsEMBL::Web::DBSQL::ProductionAdaptor->new($hub)->fetch_changelog({ release => $species_defs->ENSEMBL_VERSION, species => $hub->species, limit => 3 });
     
     $html .= '<ul>';
-    $html .= qq{<li><a href="$news_url#change_$_->{'id'}" class="nodeco">$_->{'title'}</a></li>} for @$changes;
+    $html .= qq(<li><a href="$news_url#change_$_->{'id'}" class="nodeco">$_->{'title'}</a></li>) for @$changes;
     $html .= '</ul>';
-    $html .= qq{<div style="text-align:right;margin-top:-1em;padding-bottom:8px"><a href="$news_url" class="nodeco">More news</a>...</div>};
+    $html .= qq(<div style="text-align:right;margin-top:-1em;padding-bottom:8px"><a href="$news_url" class="nodeco">More news</a>...</div>);
   }
 
   return $html;
 }
 
 sub assembly_text {
-  my $self            = shift;
-  my $hub             = $self->hub;
-  my $species_defs    = $hub->species_defs;
-  my $species         = $hub->species;
-  my $sample_data     = $species_defs->SAMPLE_DATA;
-  my $ftp             = $species_defs->ENSEMBL_FTP_URL;
-  my $ensembl_version = $species_defs->ENSEMBL_VERSION;
-  my $assembly        = $species_defs->ASSEMBLY_NAME;
-  my $mappings        = $species_defs->ASSEMBLY_MAPPINGS;
-  my $gca             = $species_defs->ASSEMBLY_ACCESSION;
-  my $archive         = $species_defs->get_config($species, 'ENSEMBL_ARCHIVES') || {};
-  my $assemblies      = $species_defs->get_config($species, 'ASSEMBLIES')       || {};
-  my $pre_species     = $species_defs->get_config('MULTI', 'PRE_SPECIES');
-  my @other_assemblies;
-  
+  my $self              = shift;
+  my $hub               = $self->hub;
+  my $species_defs      = $hub->species_defs;
+  my $species           = $hub->species;
+  my $sample_data       = $species_defs->SAMPLE_DATA;
+  my $ftp               = $self->ftp_url;
+  my $assembly          = $species_defs->ASSEMBLY_NAME;
+  my $assembly_version  = $species_defs->ASSEMBLY_VERSION;
+  my $mappings          = $species_defs->ASSEMBLY_MAPPINGS;
+  my $gca               = $species_defs->ASSEMBLY_ACCESSION;
+ 
+  my $ac_link;
+  if ($species_defs->ENSEMBL_AC_ENABLED) {
+    $ac_link = sprintf('<a href="%s" class="nodeco">', $hub->url({'type' => 'Tools', 'action' => 'AssemblyConverter'}));
+  }
+  else {
+    $ac_link = sprintf('<a href="%s" class="modal_link nodeco" rel="modal_user_data">', $hub->url({'type' => 'UserData', 'action' => 'SelectFeatures', __clear => 1}));
+  }
+
   my $html = sprintf('
     <div class="homepage-icon">
       %s
       %s
     </div>
     <h2>Genome assembly: %s%s</h2>
-    <p><a href="%s#assembly" class="nodeco">%sMore information and statistics</a></p>
+    <p><a href="%s" class="nodeco">%sMore information and statistics</a></p>
     %s
     %s
     <p><a href="%s" class="modal_link nodeco" rel="modal_user_data">%sDisplay your data in %s</a></p>',
@@ -139,43 +152,21 @@ sub assembly_text {
     $hub->url({ action => 'Annotation', __clear => 1 }), sprintf($self->{'icon'}, 'info'),
     
     $ftp ? sprintf(
-      '<p><a href="%s/release-%s/fasta/%s/dna/" class="nodeco">%sDownload DNA sequence</a> (FASTA)</p>', ## Link to FTP site
-      $ftp, $ensembl_version, lc $species, sprintf($self->{'icon'}, 'download')
+      '<p><a href="%s/fasta/%s/dna/" class="nodeco">%sDownload DNA sequence</a> (FASTA)</p>', ## Link to FTP site
+      $ftp, lc $species, sprintf($self->{'icon'}, 'download')
     ) : '',
     
     $mappings && ref $mappings eq 'ARRAY' ? sprintf(
-      '<p><a href="%s" class="modal_link nodeco" rel="modal_user_data">%sConvert your data to %s coordinates</a></p>', ## Link to assembly mapper
-      $hub->url({ type => 'UserData', action => 'SelectFeatures', __clear => 1 }), sprintf($self->{'icon'}, 'tool'), $assembly
+      '<p>%s%sConvert your data to %s coordinates</a></p>', ## Link to assembly mapper
+      $ac_link, sprintf($self->{'icon'}, 'tool'), $assembly_version
     ) : '',
     
     $hub->url({ type => 'UserData', action => 'SelectFile', __clear => 1 }), sprintf($self->{'icon'}, 'page-user'), $species_defs->ENSEMBL_SITETYPE
   );
   
-  ## Insert dropdown list of old assemblies
-  foreach my $release (reverse sort keys %$archive) {
-    next if $release == $ensembl_version || $assemblies->{$release} eq $assembly;
-    
-    push @other_assemblies, {
-      url      => sprintf('http://%s.archive.ensembl.org/%s/', lc $archive->{$release}, $species),
-      assembly => "$assemblies->{$release}",
-      release  => (sprintf '(%s release %s)', $species_defs->ENSEMBL_SITETYPE, $release),
-    };
-    
-    $assembly = $assemblies->{$release};
-  }
-  
-  push @other_assemblies, { url => "http://pre.ensembl.org/$species/", assembly => $pre_species->{$species}[1], release => '(Ensembl pre)' } if $pre_species->{$species};
-
-  if (scalar @other_assemblies) {
-    $html .= '<h3 style="color:#808080;padding-top:8px">Other assemblies</h3>';
-    
-    if (scalar @other_assemblies > 1) {
-      $html .= qq{<form action="/$species/redirect" method="get"><select name="url">};
-      $html .= qq{<option value="$_->{'url'}">$_->{'assembly'} $_->{'release'}</option>} for @other_assemblies;
-      $html .= '</select> <input type="submit" name="submit" class="fbutton" value="Go" /></form>';
-    } else { 
-      $html .= qq{<ul><li><a href="$other_assemblies[0]{'url'}" class="nodeco">$other_assemblies[0]{'assembly'}</a> $other_assemblies[0]{'release'}</li></ul>};
-    }
+  ## Insert dropdown list of other assemblies
+  if (my $assembly_dropdown = $self->assembly_dropodown) {
+    $html .= '<h3 class="light top-margin">Other assemblies</h3>'.$assembly_dropdown;
   }
 
   return $html;
@@ -187,7 +178,7 @@ sub genebuild_text {
   my $species_defs = $hub->species_defs;
   my $species      = $hub->species;
   my $sample_data  = $species_defs->SAMPLE_DATA;
-  my $ftp          = $species_defs->ENSEMBL_FTP_URL;
+  my $ftp          = $self->ftp_url;
 
   return sprintf('
     <div class="homepage-icon">
@@ -196,9 +187,10 @@ sub genebuild_text {
     </div>
     <h2>Gene annotation</h2>
     <p><strong>What can I find?</strong> Protein-coding and non-coding genes, splice variants, cDNA and protein sequences, non-coding RNAs.</p>
-    <p><a href="%s#genebuild" class="nodeco">%sMore about this genebuild</a></p>
+    <p><a href="%s" class="nodeco">%sMore about this genebuild</a>%s</p>
     %s
     <p><a href="%s" class="modal_link nodeco" rel="modal_user_data">%sUpdate your old Ensembl IDs</a></p>
+    %s
     %s',
     
     sprintf(
@@ -215,18 +207,20 @@ sub genebuild_text {
     
     $hub->url({ action => 'Annotation', __clear => 1 }), sprintf($self->{'icon'}, 'info'),
     
+    $hub->database('rnaseq') ? sprintf(', including <a href="%s" class="nodeco">RNASeq gene expression models</a>', $hub->url({'action' => 'Expression'})) : '',
+
     $ftp ? sprintf(
-      '<p><a href="%s/release-%s/fasta/%s/" class="nodeco">%sDownload genes, cDNAs, ncRNA, proteins</a> (FASTA)</p>', ## Link to FTP site
-      $ftp, $species_defs->ENSEMBL_VERSION, lc $species, sprintf($self->{'icon'}, 'download')
+      '<p><a href="%s/fasta/%s/" class="nodeco">%sDownload genes, cDNAs, ncRNA, proteins</a> (FASTA)</p>', ## Link to FTP site
+      $ftp, lc $species, sprintf($self->{'icon'}, 'download')
     ) : '',
     
     $hub->url({ type => 'UserData', action => 'UploadStableIDs', __clear => 1 }), sprintf($self->{'icon'}, 'tool'),
     
-    $species_defs->get_config('MULTI', 'ENSEMBL_VEGA')->{$species} ? qq{
+    $species_defs->get_config('MULTI', 'ENSEMBL_VEGA')->{$species} ? qq(
       <a href="http://vega.sanger.ac.uk/$species/" class="nodeco">
       <img src="/img/vega_small.gif" alt="Vega logo" style="float:left;margin-right:8px;margin-bottom:1em;width:83px;height:30px;vertical-align:center" title="Vega - Vertebrate Genome Annotation database" /></a>
       <p>Additional manual annotation can be found in <a href="http://vega.sanger.ac.uk/$species/" class="nodeco">Vega</a></p>
-    } : ''
+    ) : ''
   );
 }
 
@@ -235,7 +229,7 @@ sub compara_text {
   my $hub          = $self->hub;
   my $species_defs = $hub->species_defs;
   my $sample_data  = $species_defs->SAMPLE_DATA;
-  my $ftp          = $species_defs->ENSEMBL_FTP_URL;
+  my $ftp          = $self->ftp_url;
   
   return sprintf('
     <div class="homepage-icon">
@@ -255,21 +249,21 @@ sub compara_text {
     sprintf($self->{'icon'}, 'info'),
     
     $ftp ? sprintf(
-      '<p><a href="%s/release-%s/emf/ensembl-compara/" class="nodeco">%sDownload alignments</a> (EMF)</p>', ## Link to FTP site
-      $ftp, $species_defs->ENSEMBL_VERSION, sprintf($self->{'icon'}, 'download')
+      '<p><a href="%s/emf/ensembl-compara/" class="nodeco">%sDownload alignments</a> (EMF)</p>', ## Link to FTP site
+      $ftp, sprintf($self->{'icon'}, 'download')
     ) : ''
   );
 }
 
 sub variation_text {
-  my $self = shift;
-  my $hub  = $self->hub;
+  my $self          = shift;
+  my $hub           = $self->hub;
+  my $species_defs  = $hub->species_defs;
   my $html;
 
   if ($hub->database('variation')) {
-    my $species_defs = $hub->species_defs;
     my $sample_data  = $species_defs->SAMPLE_DATA;
-    my $ftp          = $species_defs->ENSEMBL_FTP_URL;
+    my $ftp          = $self->ftp_url;
        $html         = sprintf('
       <div class="homepage-icon">
         %s
@@ -304,8 +298,8 @@ sub variation_text {
       sprintf($self->{'icon'}, 'info'), $species_defs->ENSEMBL_SITETYPE,
       
       $ftp ? sprintf(
-        '<p><a href="%s/release-%s/variation/gvf/%s/" class="nodeco">%sDownload all variants</a> (GVF)</p>', ## Link to FTP site
-        $ftp, $species_defs->ENSEMBL_VERSION, lc $hub->species, sprintf($self->{'icon'}, 'download')
+        '<p><a href="%s/variation/gvf/%s/" class="nodeco">%sDownload all variants</a> (GVF)</p>', ## Link to FTP site
+        $ftp, lc $hub->species, sprintf($self->{'icon'}, 'download')
       ) : ''
     );
   } else {
@@ -314,10 +308,12 @@ sub variation_text {
       <p>This species currently has no variation database. However you can process your own variants using the Variant Effect Predictor:</p>
     ';
   }
-  
+
+  my $new_vep = $species_defs->ENSEMBL_VEP_ENABLED;
   $html .= sprintf(
-    qq{<p><a href="%s" class="nodeco">$self->{'icon'}Variant Effect Predictor<img src="%svep_logo_sm.png" style="vertical-align:top;margin-left:12px" /></a></p>},
-    $hub->url({ type => 'Tools', action => 'VEP', __clear => 1 }),
+    qq(<p><a href="%s" class="%snodeco">$self->{'icon'}Variant Effect Predictor<img src="%svep_logo_sm.png" style="vertical-align:top;margin-left:12px" /></a></p>),
+    $hub->url({'__clear' => 1, $new_vep ? qw(type Tools action VEP) : qw(type UserData action UploadVariations)}),
+    $new_vep ? '' : 'modal_link ',
     'tool',
     $self->img_url
   );
@@ -333,7 +329,7 @@ sub funcgen_text {
   
   if ($sample_data->{'REGULATION_PARAM'}) {
     my $species = $hub->species;
-    my $ftp     = $species_defs->ENSEMBL_FTP_URL;
+    my $ftp     = $self->ftp_url;
     
     return sprintf('
       <div class="homepage-icon">
@@ -347,7 +343,7 @@ sub funcgen_text {
       
       sprintf(
         $self->{'img_link'},
-        $hub->url({ type => 'Regulation', action => 'Cell_line', db => 'funcgen', rf => $sample_data->{'REGULATION_PARAM'}, __clear => 1 }),
+        $hub->url({ type => 'Regulation', action => 'Summary', db => 'funcgen', rf => $sample_data->{'REGULATION_PARAM'}, __clear => 1 }),
         "Go to regulatory feature $sample_data->{'REGULATION_TEXT'}", 'regulation', 'Example regulatory feature'
       ),
       
@@ -358,8 +354,8 @@ sub funcgen_text {
       sprintf($self->{'icon'}, 'info'), $species_defs->ENSEMBL_SITETYPE,
       
       $ftp ? sprintf(
-        '<p><a href="%s/release-%s/regulation/%s/" class="nodeco">%sDownload all regulatory features</a> (GFF)</p>', ## Link to FTP site
-        $ftp, $species_defs->ENSEMBL_VERSION, lc $species, sprintf($self->{'icon'}, 'download')
+        '<p><a href="%s/regulation/%s/" class="nodeco">%sDownload all regulatory features</a> (GFF)</p>', ## Link to FTP site
+        $ftp, lc $species, sprintf($self->{'icon'}, 'download')
       ) : '',
     );
   } else {

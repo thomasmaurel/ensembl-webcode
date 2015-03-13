@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,29 +28,32 @@ sub content {
   my $self    = shift;
   my $hub     = $self->hub;
   my $object  = $self->object;
-  my @v       = $hub->param('v');
   my @vf      = $hub->param('vf');
   my $lrg     = $hub->param('lrg');
   my $adaptor = $hub->get_adaptor('get_VariationAdaptor', 'variation');
   
+  $object = $self->hub->core_object('LRG') unless defined $object;
+
   if ($lrg && $hub->referer->{'ENSEMBL_TYPE'} eq 'LRG') {
     eval { $self->{'lrg_slice'} = $hub->get_adaptor('get_SliceAdaptor')->fetch_by_region('LRG', $lrg); };
   } elsif ($hub->referer->{'ENSEMBL_TYPE'} eq 'Transcript' || $hub->param('_transcript')) {
     $self->{'transcript'} = $hub->get_adaptor('get_TranscriptAdaptor')->fetch_by_stable_id($hub->param('_transcript') || $hub->param('t'));
   }
-  
-  for (0..$#v) {
-    my $variation_object = $self->new_object('Variation', $adaptor->fetch_by_name($v[$_]), $object->__data);
-    $self->variation_content($variation_object, $v[$_], $vf[$_]);
+ 
+  my $vfa = $hub->get_adaptor('get_VariationFeatureAdaptor','variation'); 
+  foreach (@vf) {
+    my $feature = $vfa->fetch_by_dbID($_);
+    my $variation = $feature->variation();
+    my $variation_object = $self->new_object('Variation', $variation, $object->__data);
+    $self->variation_content($variation_object, $feature);
     $self->new_feature;
   }
 }
 
 sub variation_content {
-  my ($self, $object, $v, $vf) = @_;
+  my ($self, $object, $feature) = @_;
   my $hub        = $self->hub;
   my $variation  = $object->Obj;  
-  my $feature    = $variation->get_VariationFeature_by_dbID($vf);
   my $seq_region = $feature->seq_region_name . ':';  
   my $chr_start  = $feature->start;
   my $chr_end    = $feature->end;
@@ -58,11 +61,12 @@ sub variation_content {
   my @failed     = @{$feature->variation->get_all_failed_descriptions};
   my $position   = "$seq_region$chr_start";
   my ($lrg_position, %population_data, %population_allele);
-  
+ 
+  my $v = $feature->variation()->name(); 
   my %url_params = (
     type   => 'Variation',
     v      => $v,
-    vf     => $vf,
+    vf     => $feature->dbID(),
     source => $feature->source
   );
   
@@ -93,8 +97,8 @@ sub variation_content {
   my @entries = ({ type => 'Position', label => $position });
   
   if (scalar @failed) {
-    push @entries, { type => 'Failed status', label => sprintf '<span style="color:red">%s</span>', shift @failed };
-    push @entries, { type => '',              label => sprintf '<span style="color:red">%s</span>', shift @failed } while @failed;
+    push @entries, { type => 'Failed status', label_html => sprintf '<span style="color:red">%s</span>', shift @failed };
+    push @entries, { type => '',              label_html => sprintf '<span style="color:red">%s</span>', shift @failed } while @failed;
   }
   
   push @entries, { type => 'LRG position', label => $lrg_position } if $lrg_position;
@@ -111,18 +115,35 @@ sub variation_content {
       push @entries, { type => 'Codons',      label => $codons}      if $codons      && $codons      =~ /\//;
     }
   }
-  
-  my %ct    = map { $_->SO_term => [ $_->label, $_->rank ] } values %Bio::EnsEMBL::Variation::Utils::Constants::OVERLAP_CONSEQUENCES;
-  my %types = map @{$ct{$_}}, @{($self->{'transcript'} ? $feature->get_all_TranscriptVariations([$self->{'transcript'}])->[0] : $feature)->consequence_type};
-  
+
+  # Consequence terms and display
+  my %ct    = map { $_->SO_term => { label => $_->label, 'rank' => $_->rank, 'description' => $_->description } } values %Bio::EnsEMBL::Variation::Utils::Constants::OVERLAP_CONSEQUENCES;
+  my %types = map {$_ => $ct{$_}{rank}} @{($self->{'transcript'} ? $feature->get_all_TranscriptVariations([$self->{'transcript'}])->[0] : $feature)->consequence_type};  
+
+  my $var_styles = $self->hub->species_defs->colour('variation');
+  my $colourmap  = $self->hub->colourmap;
+  my $type = join ' ',
+     map {
+       sprintf(
+         '<li>'.
+         '  <nobr><span class="colour" style="background-color:%s">&nbsp;</span> '.
+         '  <span class="_ht conhelp coltab_text" title="%s">%s</span></nobr>'.
+         '</li>',
+         $var_styles->{$_} ? $colourmap->hex_by_name($var_styles->{$_}->{'default'}) : $colourmap->hex_by_name($var_styles->{'default'}->{'default'}),
+         $ct{$_}->{'description'},
+         $ct{$_}->{'label'}
+       )
+     }
+     sort { $types{$a} <=> $types{$b} } keys %types;
+
   push @entries, (
-    { type  => 'Types',   label_html => sprintf '<ul>%s</ul>', join '', map "<li>$_</li>", sort { $types{$a} <=> $types{$b} } keys %types },
+    { type  => 'Consequences',   label_html => "<ul>$type</ul>" },
     { link  => $hub->url({ action => 'Explore', %url_params}), label => 'Explore this variation'},
     { link  => $hub->url({ action => 'Mappings', %url_params }), label => 'Gene/Transcript Locations' }
   );
-  
+
   push @entries, { link => $hub->url({ action => 'Phenotype', %url_params }), label => 'Phenotype Data' } if scalar @{$object->get_external_data};
-  
+
   foreach my $pop (sort { $a->{'pop_info'}{'Name'} cmp $b->{'pop_info'}{'Name'} } grep { $_->{'pop_info'}{'Name'} =~ /^1000genomes.+phase_\d/i } values %{$object->freqs($feature)}) {
     my $name = [ split /:/, $pop->{'pop_info'}{'Name'} ]->[-1]; # shorten the population name
        $name = $name =~ /phase_1_(.+)/ ? $1 : '';

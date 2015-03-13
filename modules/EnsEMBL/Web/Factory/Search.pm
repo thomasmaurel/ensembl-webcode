@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -85,9 +85,12 @@ sub count {
 
   my $dbh = $self->database($db);
   return 0 unless $dbh;
+  ## quote before assignment to full text keyword
+  $kw = $dbh->dbc->db_handle->quote($kw);
   my $full_kw = $kw; 
   $full_kw =~ s/\%/\*/g; 
-  $kw = $dbh->dbc->db_handle->quote($kw);
+  ## remove leading and trailing quote that DBI->quote() adds
+  $full_kw =~ s/^'|'$//g;
   (my $t = $sql ) =~ s/'\[\[KEY\]\]'/$kw/g;
                $t =~ s/\[\[COMP\]\]/$comp/g;
                $t =~ s/\[\[FULLTEXTKEY\]\]/$full_kw/g; # Eagle extra regexp as we can have ' ' around our search term using full text search 
@@ -102,9 +105,12 @@ sub _fetch {
   my( $self, $db, $search_SQL, $comparator, $kw, $limit ) = @_;
   my $dbh = $self->database( $db );
   return [] unless $dbh;
+  ## quote before assignment to full text keyword
+  $kw = $dbh->dbc->db_handle->quote($kw);
   my $full_kw = $kw; 
   $full_kw =~ s/\%/\*/g; 
-  $kw = $dbh->dbc->db_handle->quote($kw);
+  ## remove leading and trailing quote that DBI->quote() adds
+  $full_kw =~ s/^'|'$//g;
   (my $t = $search_SQL ) =~ s/'\[\[KEY\]\]'/$kw/g;
   $t =~ s/\[\[COMP\]\]/$comparator/g;
   $t =~ s/\[\[FULLTEXTKEY\]\]/$full_kw/g;
@@ -391,45 +397,6 @@ sub search_OLIGOPROBE {
   }
   $self->{'results'}{ 'OligoProbe' }  = [ $self->{_results}, $self->{_result_count} ];
 }
-
-sub search_QTL {
-  my $self = shift;
-  my $species = $self->species;
-  my $species_path = $self->species_path;
-  
-  $self->_fetch_results(
-  [ 'core', 'QTL',
-"select count(*)
-  from qtl_feature as qf, qtl as q
- where q.qtl_id = qf.qtl_id and q.trait [[COMP]] '[[KEY]]'",
-"select q.trait, concat( sr.name,':', qf.seq_region_start, '-', qf.seq_region_end ),
-       qf.seq_region_end - qf.seq_region_start
-  from seq_region as sr, qtl_feature as qf, qtl as q
- where q.qtl_id = qf.qtl_id and qf.seq_region_id = sr.seq_region_id and q.trait [[COMP]] '[[KEY]]'" ],
-  [ 'core', 'QTL',
-"select count(*)
-  from qtl_feature as qf, qtl_synonym as qs ,qtl as q
- where qs.qtl_id = q.qtl_id and q.qtl_id = qf.qtl_id and qs.source_primary_id [[COMP]] '[[KEY]]'",
-"select q.trait, concat( sr.name,':', qf.seq_region_start, '-', qf.seq_region_end ),
-       qf.seq_region_end - qf.seq_region_start
-  from seq_region as sr, qtl_feature as qf, qtl_synonym as qs ,qtl as q
- where qs.qtl_id = q.qtl_id and q.qtl_id = qf.qtl_id and qf.seq_region_id = sr.seq_region_id and qs.source_primary_id [[COMP]] '[[KEY]]'" ]
-  );
-
-  foreach ( @{$self->{_results}} ) {
-    $_ = {
-#      'URL'       => "$species_path/cytoview?l=$_->[1]",
-      'URL'       => "$species_path/Location/View?r=$_->[1]", # Eagle change, updated link to v58 ensembl format
-      'idx'       => 'QTL',
-      'subtype'   => 'QTL',
-      'ID'        => $_->[0],
-      'desc'      => '',
-      'species'   => $species
-    };
-  }
-  $self->{'results'}{'QTL'} = [ $self->{_results}, $self->{_result_count} ];
-}
-
 
 sub search_MARKER {
   my $self = shift;

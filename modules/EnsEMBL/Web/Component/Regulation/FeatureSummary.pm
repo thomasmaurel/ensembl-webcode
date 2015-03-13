@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ sub _init {
 sub content {
   my $self = shift;
   my $object = $self->object;
+
+  $self->cell_line_button('reg_summary');
 
   my $object_slice = $object->get_context_slice(25000);
      $object_slice = $object_slice->invert if $object_slice->strand < 1; 

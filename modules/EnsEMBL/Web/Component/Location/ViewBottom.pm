@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -80,7 +80,7 @@ sub _add_object_track {
   my $extra;
   
   # Add track for gene if not on by default
-  if (my $gene = $hub->core_objects->{'gene'}) {
+  if (my $gene = $hub->core_object('gene')) {
     my $key  = $image_config->get_track_key('transcript', $gene);
     my $node = $image_config->get_node(lc $key);
  

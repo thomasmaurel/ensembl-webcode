@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ use EnsEMBL::Web::Fake;
 
 use base qw(EnsEMBL::Web::Factory);
 
+sub canLazy { return 1; }
 sub createObjectsInternal {
   my $self = shift;
   my $db = $self->param('db') || 'core';
@@ -37,8 +38,14 @@ sub createObjectsInternal {
   my $adaptor = $db_adaptor->get_TranscriptAdaptor;
   return undef unless $adaptor;
   my $transcript = $adaptor->fetch_by_stable_id($self->param('t'));
-  $self->DataObjects($self->new_object('Transcript', $transcript, $self->__data));
-  return $transcript;
+  if ($transcript) {
+    return $self->new_object('Transcript', $transcript, $self->__data);
+  }
+  else {
+    ## Fall back to standard method if stable ID doesn't return
+    ## a transcript, e.g. if it's a prediction transcript
+    $self->createObjects;
+  }
 }
 
 sub createObjects {   
@@ -119,9 +126,11 @@ sub createObjects {
     
     $transcript ||= $self->_known_feature('Transcript', $param, 't'); # Last check to see if a feature can be found for the parameters supplied
   }
-  
+
+  my $out;  
   if ($transcript) {
-    $self->DataObjects($self->new_object('Transcript', $transcript, $self->__data));
+    $out = $self->new_object('Transcript', $transcript, $self->__data);
+    $self->DataObjects($out);
     
     if ($new_factory_type) {
       $self->generate_object('Location', $transcript->feature_Slice); # Generate a location from the transcript
@@ -136,6 +145,7 @@ sub createObjects {
     $self->param('t', $transcript->stable_id) unless $transcript->isa('Bio::EnsEMBL::PredictionTranscript');
     $self->delete_param($_) for qw(transcript peptide protein);
   }
+  return $out;
 }
 
 sub _help {
@@ -143,7 +153,7 @@ sub _help {
 
   my %sample    = %{$self->species_defs->SAMPLE_DATA || {}};
   my $help_text = $string ? sprintf '<p>%s</p>', encode_entities($string) : '';
-  my $url       = $self->hub->url({ __clear => 1, action => 'Transcript', t => $sample{'TRANSCRIPT_PARAM'} });
+  my $url       = $self->hub->url({ __clear => 1, action => 'Summary', t => $sample{'TRANSCRIPT_PARAM'} });
   
   $help_text .= sprintf('
     <p>

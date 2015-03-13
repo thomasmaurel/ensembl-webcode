@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -59,6 +59,17 @@ sub render {
   ## @overrides
   my $self = shift;
 
+  $self->prepare_to_render;
+
+  return $self->SUPER::render;
+}
+
+sub prepare_to_render {
+  ## Does some extra modifications before returning the fieldset for rendering
+  my $self = shift;
+
+  return if $self->{'__prepared_to_render'};
+
   unless ($self->has_flag($self->_FLAG_SKIP_REQUIRED_NOTES)) {
     $_->has_class(EnsEMBL::Web::Form::Element::CSS_CLASS_REQUIRED) and $self->add_notes($self->FOOT_NOTE_REQUIRED) and last for @{$self->inputs};
   }
@@ -88,7 +99,7 @@ sub render {
     }
   }
 
-  return $self->SUPER::render;
+  $self->{'__prepared_to_render'} = 1;
 }
 
 sub configure {

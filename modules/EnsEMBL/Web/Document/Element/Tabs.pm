@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,9 +37,15 @@ sub new {
   });
 }
 
-sub entries :lvalue { $_[0]->{'entries'}; }
-sub active  :lvalue { $_[0]->{'active'};  }
-sub add_entry       { push @{shift->{'entries'}}, @_; }
+sub entries { return $_[0]->{'entries'}; }
+
+sub active {
+  my $self = shift;
+  $self->{'active'} = shift if @_;
+  return $self->{'active'};
+}
+
+sub add_entry { push @{shift->{'entries'}}, @_; }
 
 sub init_history {} # stub for users plugin
 
@@ -56,7 +62,7 @@ sub init {
     class    => 'species',
     type     => 'Info',
     action   => 'Index',
-    caption  => sprintf('%s (%s)', $species_defs->SPECIES_COMMON_NAME, $species_defs->ASSEMBLY_NAME),
+    caption  => sprintf('%s (%s)', $species_defs->SPECIES_COMMON_NAME, $species_defs->ASSEMBLY_SHORT_NAME),
     dropdown => 1
   } : {
     class    => 'species',
@@ -147,7 +153,7 @@ sub content {
   $content  = $short_tabs . $long_tabs;
   $content  = qq{<ul class="tabs">$content</ul>} if $content;
   $content .= $self->species_list                if $self->{'species_list'};
-  $content .= $self->history                     if $history;
+  $content .= join '', values %{$self->dropdown} if $history;
   
   return $content;
 }
@@ -191,7 +197,7 @@ sub species_list {
   return sprintf '<div class="dropdown species">%s<h4>%s</h4><ul>%s</ul></div>', $fav_species, $fav_species ? 'All species' : 'Select a species', $all_species;  
 }
 
-sub history {
+sub dropdown {
   my $self = shift;
   my %html;
   
@@ -213,7 +219,7 @@ sub history {
       <ul class="recent"><li><a class="constant clear_history bold" href="/Account/ClearHistory?object=Location">Clear history</a></li></ul>
     </div>';
   
-  return join '', values %html;
+  return \%html;
 }
 
 1;

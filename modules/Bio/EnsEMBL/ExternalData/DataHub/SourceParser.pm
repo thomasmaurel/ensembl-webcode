@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,12 +36,17 @@ Anne Parker <ap5@sanger.ac.uk>
 package Bio::EnsEMBL::ExternalData::DataHub::SourceParser;
 
 use strict;
-use vars qw(@EXPORT_OK);
-use base qw(Exporter);
 
-use LWP::UserAgent;
+use Digest::MD5 qw(md5_hex);
 
+use EnsEMBL::Web::File::Utils::URL qw(read_file);
 use EnsEMBL::Web::Tree;
+
+## Force refresh of hub files
+our $headers = {
+                'Cache-Control'     => 'no-cache',
+                'If-Modified-Since' => 'Thu, 1 Jan 1970 00:00:00 GMT',
+                };
 
 =head1 METHODS
 
@@ -58,16 +63,24 @@ use EnsEMBL::Web::Tree;
 =cut
 
 sub new {
-  my ($class, $settings) = @_;
+  my ($class, %args) = @_;
 
-  my $ua = LWP::UserAgent->new;
-  $ua->timeout($settings->{'timeout'});
-  $ua->proxy('http', $settings->{'proxy'}) if $settings->{'proxy'};
-
-  my $self = { ua => $ua };
+  my $self = \%args;
   bless $self, $class;
 
   return $self;
+}
+
+sub web_hub {
+## Gets EnsEMBL::Web::Hub (not to be confused with track hub!)
+  my $self = shift;
+  return $self->{'hub'};
+}
+
+sub url {
+  my ($self, $url) = @_;
+  $self->{'url'} = $url if $url;
+  return $self->{'url'};
 }
 
 =head2 get_hub_info
@@ -84,8 +97,19 @@ sub new {
 =cut
 
 sub get_hub_info {
-  my ($self, $url) = @_;
-  my $ua        = $self->{'ua'};
+  my ($self, $url, $assembly_lookup) = @_;
+
+  $self->url($url);
+
+  my $cache = $self->web_hub ? $self->web_hub->cache : undef;
+  my $cache_key = 'trackhub_'.md5_hex($url);
+  my $hub_info;
+
+  if ($cache) {
+    $hub_info = $cache->get($cache_key);
+    return $hub_info if $hub_info;
+  }
+
   my @split_url = split '/', $url;
   my $hub_file;
   
@@ -96,60 +120,111 @@ sub get_hub_info {
     $hub_file = 'hub.txt';
     $url      =~ s|/$||;
   }
-  
-  my $response = $ua->get("$url/$hub_file");
-  
-  return { error => $response->status_line } unless $response->is_success;
-  
+  my $file_args = {'hub' => $self->{'hub'}, 'nice' => 1, 'headers' => $headers}; 
+
+  my $response = read_file("$url/$hub_file", $file_args);
+  my $content;
+ 
+  if ($response->{'error'}) {
+    return $response;
+  }
+  else {
+    $content = $response->{'content'};
+  }
   my %hub_details;
-  
+
   ## Get file name for file with genome info
-  foreach (split /\n/, $response->content) {
+  foreach (split /\n/, $content) {
+    $_ =~ s/\s+$//;
     my @line = split /\s/, $_, 2;
     $hub_details{$line[0]} = $line[1];
   }
-  
-  return { error => 'No genomesFile found' } unless $hub_details{'genomesFile'};
-  
-  $response = $ua->get("$url/$hub_details{'genomesFile'}"); ## Now get genomes file and parse
-  
-  return { error => 'genomesFile: ' . $response->status_line } unless $response->is_success;
-  
-  (my $genome_file = $response->content) =~ s/\r//g;
-  my %genome_info  = map { [ split /\s/ ]->[1] || () } split /\n/, $genome_file; ## We only need the values, not the fieldnames
-  my @track_errors;
-  
-  ## Parse list of config files
-  while (my ($genome, $file) = each %genome_info) {
-    $response = $ua->get("$url/$file");
-    
-    if (!$response->is_success) {
-      push @track_errors, "$genome ($url/$file): " . $response->status_line;
-      next;
+  return { error => ['No genomesFile found'] } unless $hub_details{'genomesFile'};
+ 
+  ## Now get genomes file and parse 
+  $response = read_file("$url/$hub_details{'genomesFile'}", $file_args); 
+  if ($response->{'error'}) {
+    return $response;
+  }
+  else {
+    $content = $response->{'content'};
+  }
+
+  (my $genome_file = $content) =~ s/\r//g;
+  my %genome_info;
+  my @lines = split /\n/, $genome_file;
+  my ($genome, $file, %ok_genomes);
+  foreach (split /\n/, $genome_file) {
+    my ($k, $v) = split(/\s/, $_);
+    if ($k =~ /genome/) {
+      $genome = $v;
+      ## Check if any of these genomes are available on this site,
+      ## because we don't want to waste time parsing them if not!
+      if ($assembly_lookup && $assembly_lookup->{$genome}) {
+        $ok_genomes{$genome} = 1;
+      }
+      else {
+        $genome = undef;
+      }
     }
-    
-    (my $content = $response->content) =~ s/\r//g;
-    my @track_list;
-    
-    # Hack here: Assume if file contains one include it only contains includes and no actual data
-    # Would be better to resolve all includes (read the files) and pass the complete config data into 
-    # the parsing function rather than the list of file names
-    foreach (split /\n/, $content) {
-      next if /^#/ || !/\w+/ || !/^include/;
-      
-      s/^include //;
-      push @track_list, "$url/$_";
-    }
-    
-    if (scalar @track_list) {
-      ## replace trackDb file location with list of track files
-      $genome_info{$genome} = \@track_list;
-    } else {
-      $genome_info{$genome} = [ "$url/$file" ];
+    elsif ($genome && $k =~ /trackDb/) {
+      $file = $v;
+      $genome_info{$genome} = $file;
+      ($genome, $file) = (undef, undef);
     }
   }
-  
-  return scalar @track_errors ? { error => \@track_errors } : { details => \%hub_details, genomes => \%genome_info };
+
+  my @errors;
+
+  if (keys %ok_genomes) {
+     ## Parse list of config files
+      foreach my $genome (keys %ok_genomes) {
+      $file = $genome_info{$genome};
+ 
+      $response = read_file("$url/$file", $file_args); 
+
+      if ($response->{'error'}) {
+        push @errors, "$genome ($url/$file): ".@{$response->{'error'}};
+      }
+      else {
+        $content = $response->{'content'};
+      }
+
+      my @track_list;
+      $content =~ s/\r//g;
+    
+      # Hack here: Assume if file contains one include it only contains includes and no actual data
+      # Would be better to resolve all includes (read the files) and pass the complete config data into 
+      # the parsing function rather than the list of file names
+      foreach (split /\n/, $content) {
+        next if /^#/ || !/\w+/ || !/^include/;
+      
+        s/^include //;
+        push @track_list, "$url/$_";
+      }
+
+      if (scalar @track_list) {
+        ## replace trackDb file location with list of track files
+        $genome_info{$genome} = \@track_list;
+      } else {
+        $genome_info{$genome} = [ "$url/$file" ];
+      }
+    }
+  }
+  else {
+    push @errors, "This track hub does not contain any genomes compatible with this website";
+  }
+
+  if (scalar @errors) {
+    return { error => \@errors };
+  }
+  else {
+    my $hub_info = { details => \%hub_details, genomes => \%genome_info };
+    if ($cache) {
+      $cache->set($cache_key, $hub_info, 60*60*24*7, 'TRACKHUBS');
+    }
+    return $hub_info;
+  }
 }
 
 =head2 parse
@@ -168,29 +243,53 @@ sub get_hub_info {
 
 sub parse {
   my ($self, $files) = @_;
-  
-  if (!$files && !scalar @$files) {
-    warn 'No datahub URL specified!';
+ 
+  ## Get the hub URL and check the cache 
+  my $url = shift || $self->url;
+  if (!$url) {
+    warn 'No URL specified!';
     return;
   }
-  
-  my $ua   = $self->{'ua'};
+
+  my $cache = $self->web_hub ? $self->web_hub->cache : undef;
+  my $cache_key = 'trackhub_'.md5_hex($url);
+  my $hub_info;
+
+  if ($cache) {
+    $hub_info = $cache->get($cache_key);
+    return $hub_info->{'tree'} if $hub_info;
+  }
+
+  ## Nothing cached, so parse the files
+  if (!$files && !scalar @$files) {
+    warn 'No datahub files specified!';
+    return;
+  }
+ 
   my $tree = EnsEMBL::Web::Tree->new;
   my $response;
   
   ## Get all the text files in the hub directory
   foreach (@$files) {
-    $response = $ua->get($_);
-    
-    if ($response->is_success) {
-      $self->parse_file_content($tree, $response->content =~ s/\r//gr, $_);
+    $response = read_file($_, {'hub' => $self->{'hub'}, 'nice' => 1, 'headers' => $headers});
+
+    if ($response->{'error'}) {
+      $tree->append($tree->create_node("error_$_", { error => @{$response->{'error'}}, file => $_ }));
     } else {
-      $tree->append($tree->create_node("error_$_", { error => $response->status_line, file => $_ }));
+      $self->parse_file_content($tree, $response->{'content'} =~ s/\r//gr, $_);
     }
   }
   
+  ## Update cache
+  if ($hub_info) {
+    $hub_info->{'tree'} = $tree;
+    $cache->set($cache_key, $hub_info, 60*60*24*7, 'TRACKHUBS');
+  }
+
   return $tree;
 }
+
+####### HELPER METHODS ######
 
 sub parse_file_content {
   my ($self, $tree, $content, $file) = @_;
@@ -198,7 +297,13 @@ sub parse_file_content {
   my $url      = $file =~ s|^(.+)/.+|$1|r; # URL relative to the file (up until the last slash before the file name)
   my @contents = split /track /, $content;
   shift @contents;
-  
+ 
+  ## Some hubs don't set the track type, so...
+  my %format_lookup = (
+                      'bb' => 'bigBed',
+                      'bw' => 'bigWig',
+                      );
+ 
   foreach (@contents) {
     my @lines = split /\n/;
     my (@track, $multi_line);
@@ -223,7 +328,7 @@ sub parse_file_content {
     next unless defined $id;
     
     $id = 'Unnamed' if $id eq '';
-    
+   
     foreach (@track) {
       my ($key, $value) = split /\s+/, $_, 2;
       
@@ -244,7 +349,13 @@ sub parse_file_content {
           $tracks{$id}{'signal_range'} = \@values;
         }
       } elsif ($key eq 'bigDataUrl') {
-        $tracks{$id}{$key} = $value =~ /^(ftp|https?):\/\// ? $value : "$url/$value";
+        if ($value =~ /^\//) { ## path is relative to server, not to hub.txt
+          (my $root = $url) =~ s/^(ftp|https?):\/\/([\w|-|\.]+)//;
+          $tracks{$id}{$key} = $root.$value;
+        }
+        else {
+          $tracks{$id}{$key} = $value =~ /^(ftp|https?):\/\// ? $value : "$url/$value";
+        }
       } else {
         if ($key eq 'parent' || $key =~ /^subGroup[0-9]/) {
           my @values = split /\s+/, $value;
@@ -298,12 +409,19 @@ sub parse_file_content {
     }
     
     # filthy hack to support superTrack setting being used as parent, because hubs are incorrect.
-    $tracks{$id}{'parent'} = delete $tracks{$id}{'superTrack'} if $tracks{$id}{'superTrack'} && $tracks{$id}{'superTrack'} ne 'on' && !$tracks{$id}{'parent'};
-    
+    $tracks{$id}{'parent'} = delete $tracks{$id}{'superTrack'} if $tracks{$id}{'superTrack'} && $tracks{$id}{'superTrack'} !~ /^on/ && !$tracks{$id}{'parent'};
+
+
     # any track which doesn't have any of these is definitely invalid
     if ($tracks{$id}{'type'} || $tracks{$id}{'shortLabel'} || $tracks{$id}{'longLabel'}) {
       $tracks{$id}{'track'}           = $id;
       $tracks{$id}{'description_url'} = "$url/$id.html" unless $tracks{$id}{'parent'};
+      
+      unless ($tracks{$id}{'type'}) {
+        ## Set type based on file extension
+        my @path = split(/\./, $tracks{$id}{'bigDataUrl'});
+        $tracks{$id}{'type'} = $format_lookup{$path[-1]};
+      }
       
       if ($tracks{$id}{'dimensions'}) {
         # filthy last-character-of-string hack to support dimensions in the same way as UCSC

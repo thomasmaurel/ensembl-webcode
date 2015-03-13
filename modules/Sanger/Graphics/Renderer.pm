@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -66,6 +66,13 @@ our $patterns = {
       [ [ 0, 0 ], [ 0, 4 ], [ 4, 0 ] ],
     ],
   },
+  'hatch_really_thick' => {
+    'size' => [ 24, 24 ],
+    'polys' => [
+      [ [ 1, 0],[23, 0],[ 0,23],[ 0, 1] ],
+      [ [ 2,23],[23, 2],[23,23] ],
+    ],
+  },
   'hatch_thick_sw' => {
     'size' => [ 12, 12 ],
     'polys' => [
@@ -123,7 +130,7 @@ sub render {
             scalar @{$glyphset->{'glyphs'}} == 1 && ref($glyphset->{'glyphs'}[0]) =~ /Diagnostic/;
     
     my $fntheight = defined $glyphset->label ? $config->texthelper->height($glyphset->label->font) : 0;
-    my $gstheight = $glyphset->height;
+    my $gstheight = $glyphset->height + $glyphset->section_height;
     
     if ($gstheight > $fntheight) {
       $im_height += $gstheight + $spacing;

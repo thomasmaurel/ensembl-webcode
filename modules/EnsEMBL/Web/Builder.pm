@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -35,6 +35,8 @@ use strict;
 
 use base qw(EnsEMBL::Web::Root);
 
+use EnsEMBL::Web::Lazy::Object;
+
 sub new {
   my ($class, $args) = @_;
   
@@ -66,10 +68,12 @@ sub object {
   my ($self, $type, $object) = @_;
   my $hub = $self->hub;
   $type ||= $hub->type;
+  #warn "@@@ GETTING OBJECT OF TYPE $type";
   
   $self->{'objects'}{$type} = $object if $object;
   
   my $object_type = $self->{'objects'}{$type};
+  #warn ".... FOUND OBJECT $object_type";
   $object_type  ||= $self->{'objects'}{$hub->factorytype} unless $_[1];
   
   return $object_type;
@@ -145,7 +149,7 @@ sub create_objects {
     }
   }
   
-  $hub->core_objects($self->all_objects);
+  $hub->set_builder($self);
 }
 
 sub create_factory {
@@ -166,12 +170,22 @@ sub create_factory {
   };
   
   my $factory = $self->new_factory($type, $data);
+  #warn ">>> FACTORY $factory IS LAZY? ".$factory->canLazy;
+  #warn ">>> SCRIPT ".$hub->script;
   
   if ($factory) {
-    if($hub->script eq 'Component') {
-      unless(defined $factory->createObjectsInternal) {
-        $factory->createObjects;
-      }
+    my $obj;
+    if($hub->script =~ /Component/ and $factory->canLazy) {
+     # warn "!!! BEING LAZY WITH $type";
+      $factory->SetTypedDataObject($type,EnsEMBL::Web::Lazy::Object->new(sub {
+        $obj = $factory->createObjectsInternal;
+        if($obj) {
+          $factory->SetTypedDataObject($type,$obj);
+          return $obj;
+        } else {
+          return $factory->createObjects;
+        }
+      }));
     } else {
       $factory->createObjects;
     }
@@ -180,8 +194,10 @@ sub create_factory {
       $hub->delete_param($param);
       $hub->clear_problem_type('fatal') if $type ne $hub->type; # If this isn't the critical factory for the page, ignore the problem. Deleting the parameter will cause a redirect to a working URL.
     } else {
-      $self->object($_->__objecttype, $_) for @{$factory->DataObjects};
-      
+      my $objs = $factory->DataObjects;
+      foreach my $type (keys %$objs) {
+        $self->object($type,$_) for @{$objs->{$type}};
+      } 
       return $factory;
     }
   }

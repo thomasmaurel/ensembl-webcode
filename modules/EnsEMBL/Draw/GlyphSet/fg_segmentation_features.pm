@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ sub fetch_features {
   
   warn "Failed to get unique $cell_line segmentation feature set" unless scalar @$fsets == 1;
   
-  $self->{'legend'}{'fg_segmentation_features_legend'} ||= { priority => 1020, legend => [] };  
+  $self->{'legend'}{'fg_regulatory_features_legend'} ||= { priority => 1020, legend => [] };  
   
   return $fsets->[0]->get_Features_by_Slice($slice);
 }
@@ -83,25 +83,26 @@ sub href {
 sub colour_key {
   my ($self, $f) = @_;
   my $type = $f->feature_type->name;
-  
-  if ($type =~ /Repressed/) {
-    $type = 'predicted_repressed';
+ 
+  if ($type =~ /Repressed/ or $type =~ /low activity/) {
+    $type = 'repressed';
   } elsif ($type =~ /CTCF/) {
     $type = 'ctcf';
   } elsif ($type =~ /Enhancer/) {
-    $type = 'predicted_enhancer';
+    $type = 'enhancer';
   } elsif ($type =~ /Flank/) {
-    $type = 'predicted_promoter';
+    $type = 'promoter_flanking';
   } elsif ($type =~ /TSS/) {
-    $type = 'predicted_tss';
+    $type = 'promoter';
   } elsif ($type =~ /Transcribed/) {
-    $type = 'predicted_region';
+    $type = 'region';
   } elsif ($type =~ /Weak/) {
-    $type = 'predicted_weak';
+    $type = 'weak';
+  } elsif ($type =~ /Heterochr?omatin/i) { # ? = typo in e76
+    $type = 'heterochromatin';
   } else {
     $type = 'default';
   }
-  
   return lc $type;
 }
 

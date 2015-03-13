@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -89,12 +89,23 @@ sub colour_key { return $_[0]->my_config('colour_key') || $_[0]->my_config('sub_
 # features...
 #==============================================================================
 
-sub render_unlimited        { $_[0]->render_normal(1, 1000);                                 }
-sub render_stack            { $_[0]->render_normal(1, 40);                                   }
-sub render_simple           { $_[0]->render_normal;                                          }
-sub render_half_height      { $_[0]->render_normal($_[0]->my_config('height') / 2 || 4, 20); }
-sub render_labels           { $_[0]->{'show_labels'} = 1; $_[0]->render_normal;              }
-sub render_ungrouped_labels { $_[0]->{'show_labels'} = 1; $_[0]->render_ungrouped;           }
+sub render_unlimited          { $_[0]->render_as_alignment_nolabel({'height' => 1, 'depth' => 1000});       }
+sub render_stack              { $_[0]->render_as_alignment_nolabel({'height' => 1, 'depth' => 40});         }
+sub render_simple             { $_[0]->render_as_alignment_nolabel;                                         }
+sub render_half_height        { $_[0]->render_as_alignment_nolabel({
+                                                            'height' => $_[0]->my_config('height') / 2 || 4, 
+                                                            'depth'   => 20
+                                                            });                                             }
+sub render_as_alignment_label { $_[0]->{'show_labels'} = 1; $_[0]->render_as_alignment_nolabel;             }
+sub render_ungrouped_labels   { $_[0]->{'show_labels'} = 1; $_[0]->render_ungrouped;                        }
+
+sub render_as_transcript_nolabel {$_[0]->render_as_alignment_nolabel({'structure' => 1});                   }
+sub render_as_transcript_label   {$_[0]->{'show_labels'} = 1; 
+                                              $_[0]->render_as_alignment_nolabel({'structure' => 1});       }
+
+## Backwards compatibility
+sub render_normal { $_[0]->render_as_alignment_nolabel; }
+sub render_labels { $_[0]->render_as_alignment_label; }
 
 # variable height renderer
 sub render_histogram {
@@ -142,6 +153,7 @@ sub render_histogram {
       score_colour         => $feature_colour,
       no_axis              => 1,
       axis_label           => 'off',
+      use_alpha            => 1,
       hrefs                => $hrefs,
       non_can_score_colour => $non_can_feature_colour,
     });
@@ -175,16 +187,23 @@ sub _render_hidden_bgd {
   }
 }
 
-sub render_normal {
-  my $self = shift;
+sub render_as_alignment_nolabel {
+  my ($self, $args) = @_;
   
   return $self->render_text if $self->{'text_export'};
   
-  my $h               = @_ ? shift : ($self->my_config('height') || 8);
+  my $h               = $args->{'height'} || $self->my_config('height') || 8;
      $h               = $self->{'extras'}{'height'} if $self->{'extras'} && $self->{'extras'}{'height'};
   my $strand_bump     = $self->my_config('strandbump');
-  my $depth           = @_ ? shift : ($self->my_config('dep') || 6);
+  my $explicit_zero   = (defined $_[0] and !$_[0]); # arg of 0 means 0
+  my $depth           = $args->{'depth'} || $self->my_config('dep') || 6;
      $depth           = 0 if $strand_bump || $self->my_config('nobump');
+  my $show_structure  = $args->{'structure'} || 0;
+  ## User setting overrides everything else
+  my $default_depth   = $depth;
+  my $user_depth      = $self->my_config('userdepth');
+  
+     $depth           = $user_depth if $user_depth and !$explicit_zero;
   my $gap             = $h < 2 ? 1 : 2;   
   my $strand          = $self->strand;
   my $strand_flag     = $self->my_config('strand');
@@ -207,12 +226,40 @@ sub render_normal {
   my $label_h         = 0;
   my ($fontname, $fontsize);
   
+  ## NB We need fontsize for the track expansion text, even if there are no labels
+  ($fontname, $fontsize) = $self->get_font_details('outertext');
   if ($self->{'show_labels'}) {
-    ($fontname, $fontsize) = $self->get_font_details('outertext');
     $label_h = [ $self->get_text_width(0, 'X', '', ptsize => $fontsize, font => $fontname) ]->[3];
     $join    = 1; # The no-join thing gets completely mad with labels on.
   }
-  
+
+  if(!$self->{'show_labels'}) { 
+    # Force no bumping if no actual overlap in features
+    # XXX doing a sort is too slow: integrate with main sort below 
+    # Can take about 1-5ms on tracks with a lot of data
+    my %ends;
+    my @features;
+    foreach my $feature_key (@sorted) {
+      my @tmp = @{$features{$feature_key}||[]};
+      if (ref $tmp[0] eq 'ARRAY') {
+        push @features,@{$tmp[0]};
+      } else {
+        push @features,@tmp;
+      }
+    }
+    @features = sort { $a->start <=> $b->start } @features;
+    my $overlap = 0;
+    if(@features) {
+      foreach my $s (1..$#features) {
+        $overlap = 1 if($features[$s-1]->end > $features[$s]->start);
+      }
+    }
+
+    $depth = 0 unless $overlap;
+  }
+
+  my ($track_height,$total,$on_screen,$off_screen,$on_other_strand) = (0,0,0,0,0);
+
   foreach my $feature_key (@sorted) {
     ## Fix for userdata with per-track config
     my ($config, @features);
@@ -226,27 +273,35 @@ sub render_normal {
 
     if (ref $tmp[0] eq 'ARRAY') {
       @features = @{$tmp[0]};
-      $config   = $tmp[1];
-      $depth  //= $tmp[1]{'dep'};
+      if (ref $tmp[1] eq 'HASH') {
+        $config   = $tmp[1];
+        $depth  //= $tmp[1]{'dep'};
+      }
     } else {
       @features = @tmp;
     }
 
     $self->_init_bump(undef, $depth);
-    
     my $nojoin_id = 1;
     
     foreach (sort { $a->[0] <=> $b->[0] }  map [ $_->start, $_->end, $_ ], @features) {
       my ($s, $e, $f) = @$_;
-      
-      next if $strand_flag eq 'b' && $strand != (($f->can('hstrand') ? $f->hstrand : 1) * $f->strand || -1) || $e < 1 || $s > $length;
-      
+
+      if ($strand_flag eq 'b' && $strand != (($f->can('hstrand') ? $f->hstrand : 1) * $f->strand || -1) || $e < 1 || $s > $length) {
+        $on_other_strand = 1;
+        next;
+      }
       my $fgroup_name = $join ? $self->feature_group($f) : $nojoin_id++;
       my $db_name     = $f->can('external_db_id') ? $extdbs->{$f->external_db_id}{'db_name'} : 'OLIGO';
       
       push @{$id{$fgroup_name}}, [ $s, $e, $f, int($s * $pix_per_bp), int($e * $pix_per_bp), $db_name ];
     }
-    
+    my %idl;
+    foreach my $k (keys %id) {
+      $idl{$k} = $strand * ( max(map { $_->[1] } @{$id{$k}}) -
+                             min(map { $_->[0] } @{$id{$k}}));
+    }
+
     next unless keys %id;
     
     my $colour_key     = $self->colour_key($feature_key);
@@ -275,25 +330,30 @@ sub render_normal {
     
     my $greyscale_max = $config && exists $config->{'greyscale_max'} && $config->{'greyscale_max'} > 0 ? $config->{'greyscale_max'} : 1000;
     
-    foreach my $i (sort { $id{$a}[0][3] <=> $id{$b}[0][3] || $id{$b}[-1][4] <=> $id{$a}[-1][4] } keys %id) {
+    foreach my $i (sort { $idl{$a} <=> $idl{$b} } keys %id) {
       my @feat       = @{$id{$i}};
       my $db_name    = $feat[0][5];
-      my $bump_start = int($pix_per_bp * ($feat[0][0]  < 1       ? 1       : $feat[0][0])) - 1;
-      my $bump_end   = int($pix_per_bp * ($feat[-1][1] > $length ? $length : $feat[-1][1]));
+      my $feat_from  = max(min(map { $_->[0] } @feat),1);
+      my $feat_to    = min(max(map { $_->[1] } @feat),$length);
+      my $bump_start = int($pix_per_bp * $feat_from) - 1;
+      my $bump_end   = int($pix_per_bp * $feat_to);
          $bump_end   = max($bump_end, $bump_start + 1 + [ $self->get_text_width(0, $self->feature_label($feat[0][2], $db_name), '', ptsize => $fontsize, font => $fontname) ]->[2]) if $self->{'show_labels'};
       my $x          = -1e8;
       my $row        = 0;
+      $total++;
       
       if ($depth > 0) {
         $row = $self->bump_row($bump_start, $bump_end);
         
         if ($row > $depth) {
           $features_bumped++;
+          $off_screen++;
           next;
         }
       }
+      $on_screen++;
       
-      if ($config) {
+      if ($config->{'useScore'}) {
         my $score = $feat[0][2]->score || 0;
         
         # implicit_colour means that a colour has been arbitrarily assigned
@@ -321,8 +381,8 @@ sub render_normal {
       };
       
       my $composite;
-      
-      if (scalar @feat == 1) {
+
+      if (scalar @feat == 1 and !$depth and $config->{'simpleblock_optimise'}) {
         $composite = $self;
       } else {
         $composite = $self->Composite({
@@ -388,7 +448,17 @@ sub render_normal {
       }
       
       if ($composite ne $self) {
-        if ($h > 1) {
+        if ($self->my_config('has_blocks') && $show_structure) {
+          $composite->unshift($self->Intron({
+            x         => $composite->{'x'},
+            y         => $composite->{'y'},
+            width     => $composite->{'width'},
+            height    => $h,
+            colour    => $feature_colour,
+            absolutey => 1,
+          }));
+        }
+        elsif ($h > 1) {
           $composite->bordercolour($feature_colour) if $join;
         } else {
           $composite->unshift($self->Rect({
@@ -406,6 +476,7 @@ sub render_normal {
       }
       
       if ($self->{'show_labels'}) {
+        my $start = $self->{'container'}->start;
         $self->push($self->Text({
           font      => $fontname,
           colour    => $label_colour,
@@ -420,7 +491,8 @@ sub render_normal {
           width     => $position->{'x'} + ($bump_end - $bump_start) / $pix_per_bp,
           height    => $label_h,
           absolutey => 1,
-          href      => $self->href($feat[0][2]),
+          href      => $self->href($feat[0][2],{ fake_click_start => $start + $feat_from, fake_click_end => $start + $feat_to }),
+          class     => 'group', # for click_start/end on labels
         }));
       }
       
@@ -434,14 +506,42 @@ sub render_normal {
           absolutey => 1,
         }));
       }
+      $track_height = $position->{'y'} if $position->{'y'} > $track_height;
     }
-    
     $y_offset -= $strand * ($self->_max_bump_row * ($h + $gap + $label_h) + 6);
   }
+
+  if ($off_screen) {
+    my $default = $depth == $default_depth ? 'by default' : '';
+    my $text = "Showing $on_screen of $total features, due to track being limited to $depth rows $default - click to show more";
+    my $y = $track_height + $fontsize * 2 + 10;
+    my $href = $self->_url({'action' => 'ExpandTrack', 'goto' => $self->{'config'}->hub->action, 'count' => $on_screen+$off_screen, 'default' => $default_depth}); 
+    $self->push($self->Text({
+          font      => $fontname,
+          colour    => 'black',
+          height    => $fontsize,
+          width     => $self->{'container'}->length,
+          ptsize    => $fontsize,
+          text      => $text,
+          halign    => 'left',
+          valign    => 'center',
+          x         => 0, 
+          y         => $y,
+          absolutey => 1,
+          href      => $href,
+        }));
+    $self->push($self->Space({
+            x         => 0,
+            y         => $y + 5,
+            width     => 100,
+            height    => 8,
+            absolutey => 1,
+    }));
+  } 
   
-  $self->_render_hidden_bgd($h) if $features_drawn && $self->my_config('addhiddenbgd') && $self->can('href_bgd');
+  $self->_render_hidden_bgd($h) if $features_drawn && $self->my_config('addhiddenbgd') && $self->can('href_bgd') && !$depth; 
   
-  $self->errorTrack(sprintf q{No features from '%s' in this region}, $self->my_config('name')) unless $features_drawn || $self->{'no_empty_track_message'} || $self->{'config'}->get_option('opt_empty_tracks') == 0;
+  $self->errorTrack(sprintf q{No features from '%s' on this strand}, $self->my_config('name')) unless $features_drawn || $on_other_strand || $self->{'no_empty_track_message'} || $self->{'config'}->get_option('opt_empty_tracks') == 0;
   $self->errorTrack(sprintf(q{%s features from '%s' omitted}, $features_bumped, $self->my_config('name')), undef, $y_offset) if $self->get_parameter('opt_show_bumped') && $features_bumped;
 }
 
@@ -458,8 +558,8 @@ sub render_ungrouped {
   my $self           = shift;
   my $strand         = $self->strand;
   my $strand_flag    = $self->my_config('strand');
-  my $length         = $self->{'container'}->length;
-  my $pix_per_bp     = $self->scalex;
+    my $length         = $self->{'container'}->length;
+    my $pix_per_bp     = $self->scalex;
   my $draw_cigar     = $self->my_config('force_cigar') eq 'yes' || $pix_per_bp > 0.2;
   my $h              = $self->my_config('height') || 8;
   my $regexp         = $pix_per_bp > 0.1 ? '\dI' : $pix_per_bp > 0.01 ? '\d\dI' : '\d\d\dI';
@@ -468,7 +568,7 @@ sub render_ungrouped {
   my %features       = $self->features;
   my $y_offset       = 0;
   my $label_h        = 0;
-  my ($fontname, $fontsize);
+  my ($fontname, $fontsize, $on_this_strand, @ok_features);
   
   if ($self->{'show_labels'}) {
     ($fontname, $fontsize) = $self->get_font_details('outertext');
@@ -486,7 +586,7 @@ sub render_ungrouped {
 
     ## Sanity check - make sure the feature set only contains arrayrefs, or the fancy transformation
     ## below will barf (mainly when trying to handle userdata, which includes a config hashref)
-    my @ok_features = grep ref $_ eq 'ARRAY', @{$features{$feature_key}};
+    @ok_features = grep ref $_ eq 'ARRAY', @{$features{$feature_key}};
     
     $self->{'track_key'} = $feature_key;
     
@@ -502,6 +602,7 @@ sub render_ungrouped {
       ($start, $end) = ($end, $start) if $end < $start; # Flip start end YUK!
       $start = 1       if $start < 1;
       $end   = $length if $end > $length;
+      $on_this_strand++;
       
       next if ($end * $pix_per_bp) == int($x * $pix_per_bp);
       
@@ -564,7 +665,7 @@ sub render_ungrouped {
     $y_offset -= $strand * ($h + 2);
   }
   
-  $self->errorTrack(sprintf q{No features from '%s' in this region}, $self->my_config('name')) unless $features_drawn || $self->{'no_empty_track_message'} || $self->{'config'}->get_option('opt_empty_tracks') == 0;
+  $self->errorTrack(sprintf q{No features from '%s' on this strand}, $self->my_config('name')) unless $features_drawn || ($on_this_strand == scalar(@ok_features)) || $self->{'no_empty_track_message'} || $self->{'config'}->get_option('opt_empty_tracks') == 0;
 }
 
 sub render_text {

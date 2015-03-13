@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,8 +18,9 @@ limitations under the License.
 
 package EnsEMBL::Draw::GlyphSet::TSE_intron_sf;
 
-use Data::Dumper;
+### Draws intron supporting evidence on Transcript/SupportingEvidence
 
+use Data::Dumper;
 
 use strict;
 
@@ -33,7 +34,7 @@ sub _init {
 
 sub draw_glyphs {
   my $self         = shift;
-  my $all_matches  = shift;
+  my $all_matches  = shift or return;
   my $wuc          = $self->{'config'};
   my $h            = 8; #height of glyph
   my $pix_per_bp   = $wuc->transform->{'scalex'};

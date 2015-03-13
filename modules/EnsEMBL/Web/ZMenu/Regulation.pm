@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ use strict;
 
 use List::Util qw(first);
 
-use base qw(EnsEMBL::Web::ZMenu);
+use base qw(EnsEMBL::Web::ZMenu::RegulationBase);
 
 sub content {
   my $self = shift;
@@ -44,13 +44,14 @@ sub content {
   
   my $object         = $self->new_object('Regulation', $reg_feature, $self->object->__data);
   my %motif_features = %{$object->get_motif_features};
-  
-  $self->caption('Regulatory Feature - ' . $reg_feature->feature_set->cell_type->name);
+ 
+  my $cell_type = $reg_feature->feature_set->cell_type->name;
+  $self->caption("Regulatory Feature - $cell_type");
   
   $self->add_entry({
     type  => 'Stable ID',
     label => $object->stable_id,
-    link  => $object->get_details_page_url
+    link  => $object->get_summary_page_url
   });
   
   $self->add_entry({
@@ -71,14 +72,31 @@ sub content {
       link  => $object->get_bound_location_url
     });
   }
-  
+
+  if($hub->is_new_regulation_pipeline and $cell_type ne 'MultiCell') {
+    my $status = "Unknown";
+    my $has_evidence = $object->has_evidence;
+    if($has_evidence) {
+      $status = "Active";
+    } elsif(defined $has_evidence) {
+      $status = "Inactive";
+    }
+
+    $self->add_entry({
+      type => 'Status',
+      label => $status
+    });
+  }
+
   $self->add_entry({
     type  => 'Attributes',
     label => $object->get_attribute_list
   });
   
-  $self->add_entry({ label_html => 'NOTE: This feature has been projected by the <a href="/info/docs/funcgen/index.html">RegulatoryBuild</a>' }) if $reg_feature->is_projected;
-  
+  $self->add_entry({ label_html => 'NOTE: This feature has been projected by the <a href="/info/genome/funcgen/index.html">RegulatoryBuild</a>' }) if $reg_feature->is_projected;
+
+  $self->_add_nav_entries;
+
   if (scalar keys %motif_features > 0) {
     # get region clicked on
     my $click_start = $hub->param('click_start');

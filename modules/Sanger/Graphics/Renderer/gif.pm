@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -163,7 +163,7 @@ sub render_Rect {
 sub render_Text {
   my ($self, $glyph) = @_;
 
-  return unless $glyph->{'text'};
+  return unless length $glyph->{'text'};
   my $font   = $glyph->font();
   my $colour = $self->colour($glyph->{'colour'});
 

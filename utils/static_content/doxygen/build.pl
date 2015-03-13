@@ -1,4 +1,4 @@
-# Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+# Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ my $html  = "$root/public-plugins/docs/htdocs/info/docs/Doxygen";
 my $edocs = $apis[0] eq 'edocs' || !scalar @apis;
 
 @apis = split /,/, join ',', @apis;
-@apis = qw(core hive compara analysis funcgen pipeline variation production) unless scalar @apis; # core and hive must always be first in order to generate links
+@apis = qw(core compara analysis funcgen pipeline variation production) unless scalar @apis; # core must always be first in order to generate links
 
 unshift @INC, "$root/ensembl-webcode/conf", $root;
 require SiteDefs;
@@ -54,7 +54,7 @@ if ($apis[0] ne 'edocs') {
     },
     compara => {
       STRIP_FROM_PATH => "$root/ensembl-compara/modules/",
-      TAGFILES        => "ensembl.tag=../core-api/ \\ \n                         hive.tag=../hive-api/",
+      TAGFILES        => "ensembl.tag=../core-api/ \\ \n",
     },
     funcgen => {
       PROJECT_NAME     => '"Ensembl FuncGen"',
@@ -65,7 +65,7 @@ if ($apis[0] ne 'edocs') {
     production => {
       PROJECT_NAME     => '"Ensembl Production"',
       PROJECT_BRIEF    => '"EnsEMBL Production API reference"',
-      TAFILES          => "ensembl.tag=../core-api/ \\ \n hive.tag=../hive-api/",
+      TAFILES          => "ensembl.tag=../core-api/ \\ \n",
     },
     ensemblgenomes => {
       PROJECT_NAME     => '"Ensembl Genomes"',
@@ -123,17 +123,18 @@ if ($apis[0] ne 'edocs') {
   print "Finished building Doxygen documentation.\n";
 }
 
-if ($edocs) {
+# commenting the whole things out, we are not generating edocs at the moment and there is a separate script to generate edocs
+#if ($edocs) {
   # generate e! docs:
-  system(qq{
-    echo "Generating e! docs";
-    rm -rf $root/htdocs/info/docs/webcode/edoc
-    perl $root/utils/edoc/update_docs.pl
-    echo "Copying temp files to live directory"
-    cp -r $root/utils/edoc/temp htdocs/info/docs/webcode/edoc
-    echo "Clearing up e! docs temp files";
-    rm -rf $root/utils/edoc/temp
-  });
+#  system(qq{
+#    echo "Generating e! docs";
+#    rm -rf $root/htdocs/info/docs/webcode/edoc
+#    perl $root/utils/edoc/update_docs.pl
+#    echo "Copying temp files to live directory"
+#    cp -r $root/utils/edoc/temp htdocs/info/docs/webcode/edoc
+#    echo "Clearing up e! docs temp files";
+#    rm -rf $root/utils/edoc/temp
+#  });
 
-  print "Finished building e! docs\n";
-}
+#  print "Finished building e! docs\n";
+#}

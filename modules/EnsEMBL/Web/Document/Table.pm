@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,8 +22,9 @@ use strict;
 
 use JSON qw(from_json);
 use Scalar::Util qw(looks_like_number);
+use HTML::Entities qw(encode_entities);
 
-use Sanger::Graphics::ColourMap;
+use EnsEMBL::Draw::Utils::ColourMap;
 
 use base qw(EnsEMBL::Web::Root);
 
@@ -54,7 +55,6 @@ sub new {
 sub session    :lvalue { $_[0]{'session'};    }
 sub code       :lvalue { $_[0]{'code'}        }
 sub format     :lvalue { $_[0]{'format'};     }
-sub export_url :lvalue { $_[0]{'export_url'}; }
 sub filename   :lvalue { $_[0]{'filename'};   }
 
 sub has_rows { return ! !@{$_[0]{'rows'}}; }
@@ -130,9 +130,8 @@ sub export_options {
     $index++;
     $options[$index] = $_->{'export_options'} if defined $_->{'export_options'};
   }
- 
-  (my $options = $self->jsonify(\@options)) =~ s/"/'/g;
-  return $options;
+
+  return $self->jsonify(\@options);
 }
 
 sub render {
@@ -184,7 +183,7 @@ sub render {
       
       foreach my $header (@{$self->{'spanning'}}) {
         my $span = $header->{'colspan'} || 1;
-        $thead .= qq(<th colspan="$span"><em>$header->{'title'}</em></th>);
+        $thead .= sprintf q(<th colspan="%s"><em>%s</em></th>), $span, encode_entities($header->{'title'});
       }
       
       $thead .= '</tr>';
@@ -222,7 +221,7 @@ sub render {
     my $id       = $options->{'id'};
        $id       =~ s/[\W_]table//g;
     my $filename = join '-', grep $_, $id, $self->filename;
-    my $options  = sprintf '<input type="hidden" name="expopts" value="%s" />', $self->export_options;
+    my $options  = sprintf '<input type="hidden" name="expopts" value="%s" />', encode_entities($self->export_options);
     
     $table .= qq{
       <form class="data_table_export" action="/Ajax/table_export" method="post">
@@ -233,13 +232,6 @@ sub render {
     };
   }
    
-  if ($self->export_url) {
-    $table .= sprintf(
-      '<div class="other_tool"><p><a class="export" href="%s;filename=%s;_format=Excel" title="Download all tables as CSV">Download view as CSV</a></p></div>',
-      $self->export_url, $self->filename
-    );
-  }
-  
   # A wrapper div is needed for data tables so that export and config forms can be found by checking the table's siblings
   if ($data_table) {
     $wrapper = qq{ class="$wrapper"} if $wrapper; 
@@ -327,10 +319,10 @@ sub data_table_config {
   my %columns        = map { $_->{'key'} => $i++ } @{$self->{'columns'}};
   my $session_data   = $self->session ? $self->session->get_data(type => 'data_table', code => $code) : {};
   my $sorting        = $session_data->{'sorting'} ?        from_json($session_data->{'sorting'})        : $self->{'options'}{'sorting'}        || [];
-  my $hidden         = $session_data->{'hidden_columns'} ? from_json($session_data->{'hidden_columns'}) : $self->{'options'}{'hidden_columns'} || [];
-  my $default_hidden = $self->{'options'}{'hidden_columns'} ? $self->jsonify({ map { $_ => 1 } @{$self->{'options'}{'hidden_columns'}} }) : '';
-     $default_hidden =~ s/"/'/g;
-  my $config         = qq{<input type="hidden" name="code" value="$code" />};
+  my $hidden_cols    = [ keys %{{ map { $_ => 1 } @{$self->{'options'}{'hidden_columns'} || []}, map { $_->{'hidden'} ? $columns{$_->{'key'}} : () } @{$self->{'columns'}} }} ];
+  my $hidden         = $session_data->{'hidden_columns'} ? from_json($session_data->{'hidden_columns'}) : $hidden_cols;
+  my $default_hidden = $self->{'options'}{'hidden_columns'} ? $self->jsonify({ map { $_ => 1 } @$hidden_cols }) : '';
+  my $config         = sprintf '<input type="hidden" name="code" value="%s" />', encode_entities($code);
   my $sort           = [];
   
   foreach (@$sorting) {
@@ -340,27 +332,26 @@ sub data_table_config {
   }
   
   if (scalar @$sort) {
-    (my $aaSorting = $self->jsonify($sort)) =~ s/"/'/g;
-    $config .= qq{<input type="hidden" name="aaSorting" value="$aaSorting" />};
+    $config .= sprintf '<input type="hidden" name="aaSorting" value="%s" />', encode_entities($self->jsonify($sort));
   }
   
-  $config .= sprintf '<input type="hidden" name="hiddenColumns" value="%s" />', $self->jsonify($hidden) if scalar @$hidden;
-  $config .= qq{<input type="hidden" name="defaultHiddenColumns" value="$default_hidden" />} if $default_hidden;
-  
+  $config .= sprintf '<input type="hidden" name="hiddenColumns" value="%s" />', encode_entities($self->jsonify($hidden)) if scalar @$hidden;
+  $config .= sprintf '<input type="hidden" name="defaultHiddenColumns" value="%s" />', encode_entities($default_hidden) if $default_hidden;
+
   foreach (keys %{$self->{'options'}{'data_table_config'}}) {
     my $option = $self->{'options'}{'data_table_config'}{$_};
     my $val;
     
     if (ref $option) {
-      ($val = $self->jsonify($option)) =~ s/"/'/g;
+      $val = encode_entities($self->jsonify($option));
     } else {
       $val = $option;
     }
     
-    $config .= qq{<input type="hidden" name="$_" value="$val" />};
+    $config .= qq(<input type="hidden" name="$_" value="$val" />);
   }
   
-  $config .= sprintf '<input type="hidden" name="expopts" value="%s" />', $self->export_options;
+  $config .= sprintf '<input type="hidden" name="expopts" value="%s" />', encode_entities($self->export_options);
  
   return qq{<form class="data_table_config" action="#">$config</form>};
 }
@@ -373,7 +364,7 @@ sub process {
   my (@head, @body, $colourmap, @gradient);
   
   if ($heatmap) {
-    $colourmap = Sanger::Graphics::ColourMap->new;
+    $colourmap = EnsEMBL::Draw::Utils::ColourMap->new;
     @gradient  = $colourmap->build_linear_gradient(@{$heatmap->{'settings'}});
   } 
   
@@ -389,7 +380,7 @@ sub process {
     
     if ($col->{'help'}) {
       delete $col->{'title'};
-      $label = qq(<span class="ht _ht" title="$col->{'help'}">$label</span>);
+      $label = sprintf '<span class="ht _ht"><span class="_ht_tip">%s</span>%s</span>', encode_entities($col->{'help'}), $label;
     }
     
     push @{$head[0]}, sprintf '<th%s>%s</th>', join('', map { $col->{$_} ? qq( $_="$col->{$_}") : () } qw(id class title style colspan rowspan)), $label;

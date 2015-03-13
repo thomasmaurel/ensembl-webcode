@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ sub slice         { return undef; }
 sub attribs       { return {}; }
 
 sub extra_data { return $_[0]{__extra__}; }
+sub extra_data_order { return undef; }
 
 sub coords {
   ## Default parser for raw data - this is the commonest format

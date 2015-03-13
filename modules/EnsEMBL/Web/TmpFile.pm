@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,11 @@ package EnsEMBL::Web::TmpFile;
 ## e.g. save them to the tmp storage using driver(s) - either disk or memcached
 ## see EnsEMBL::Web::TmpFile::* and EnsEMBL::Web::TmpFile::Drivers::* for more info
 
+### STATUS: To Be Replaced
+### This module is widely used but inefficient when handling
+### large files - it will be replaced by EnsEMBL::Web::File
+### in due course
+
 use strict;
 use IO::String;
 use HTTP::Request;
@@ -30,7 +35,7 @@ use LWP::UserAgent;
 use Digest::MD5 qw(md5_hex);
 
 use EnsEMBL::Web::SpeciesDefs;
-use EnsEMBL::Web::Tools::RandomString qw(random_ticket);
+use EnsEMBL::Web::Utils::RandomString qw(random_ticket);
 use EnsEMBL::Web::TmpFile::Driver::Disk;
 use EnsEMBL::Web::TmpFile::Driver::Memcached;
 
@@ -56,7 +61,7 @@ sub _bool {
 sub token {
 
 }
-__PACKAGE__->mk_accessors(qw(species_defs compress drivers exptime URL));
+__PACKAGE__->mk_accessors(qw(species_defs compress get_compressed drivers exptime URL));
 __PACKAGE__->mk_ro_accessors(qw(full_path prefix extension tmp_dir path_pattern URL_root shortname token));
 
 ## new - tmp file constructor
@@ -169,6 +174,10 @@ sub fix_filename {
    ($self->{shortname}) = $filename =~ m!([^/]+)$!;
     $self->{filename}   = $filename;
   }
+  ## Quick hack for export testing
+  if ($self->{full_path} =~ /tmp\/export([\w+])/) {
+    $self->{full_path} =~ s/tmp\/export([\w+])/tmp\/export\/$1/;
+  } 
   
   return $self->{filename};
 }
@@ -177,7 +186,7 @@ sub fix_filename {
 
 
 ## Creates unique random-ish filename
-## have a look at EnsEMBL::Web::Tools::RandomString::random_ticket() if you curious about "random-ish"
+## have a look at EnsEMBL::Web::Utils::RandomString::random_ticket() if you curious about "random-ish"
 ## -> nothing
 ## <- always true
 sub generate_filename {

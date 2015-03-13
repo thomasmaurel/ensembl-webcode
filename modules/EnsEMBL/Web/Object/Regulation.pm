@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -48,11 +48,7 @@ sub caption {
   return $caption;    
 }
 
-sub default_action {
-  my $self         = shift;
-  my $availability = $self->availability;
-  return $availability->{'regulation'} ? 'Cell_line' : 'Summary';
-}
+sub default_action { return 'Summary'; }
 
 sub availability {
   my $self = shift;
@@ -90,6 +86,22 @@ sub feature_set       { my $self = shift; return $self->Obj->feature_set;       
 sub feature_type      { my $self = shift; return $self->Obj->feature_type;              }
 sub slice             { my $self = shift; return $self->Obj->slice;                     }           
 sub seq_region_length { my $self = shift; return $self->Obj->slice->seq_region_length;  }
+
+sub has_evidence {
+  my ($self) = @_;
+
+  # Can be simple accessor for 76, but avoid breaking master
+  return 1 unless $self->hub->is_new_regulation_pipeline;
+  return !!$self->Obj->has_evidence if $self->Obj->can('has_evidence');
+  return undef;
+}
+sub cell_type_count {
+  my ($self) = @_;
+
+  # Can be simple accessor for 76, but avoid breaking master
+  return $self->Obj->cell_type_count if $self->Obj->can('cell_type_count');
+  return 0;
+}
 
 sub fetch_all_objs {
   my $self = shift;
@@ -216,12 +228,12 @@ sub get_bound_location_url {
   });
 }
 
-sub get_details_page_url {
+sub get_summary_page_url {
   my $self = shift;
   
   return $self->hub->url({
     type   => 'Regulation',
-    action => 'Cell_line',
+    action => 'Summary',
     rf     => $self->stable_id,
     fdb    => 'funcgen',
   });
@@ -237,6 +249,11 @@ sub get_context_slice {
   my $self    = shift;
   my $padding = shift || 25000;
   return $self->Obj->feature_Slice->expand($padding, $padding) || 1;
+}
+
+sub show_signal {
+  $_[0]->{'show_signal'} = $_[1] if @_>1;
+  return $_[0]->{'show_signal'};
 }
 
 sub get_seq {
@@ -255,7 +272,7 @@ sub get_bound_context_slice {
   my $bound_end = $self->bound_end;
   my $reg_feature_adaptor = $self->get_fg_db->get_RegulatoryFeatureAdaptor;
   my $reg_objs            = $reg_feature_adaptor->fetch_all_by_stable_ID($self->stable_id);
-  foreach my $rf (@$reg_objs) { 
+  foreach my $rf (@$reg_objs) {
     if ($bound_start >= $rf->bound_start){ $bound_start = $rf->bound_start; } 
     if ($bound_end <= $rf->bound_end){ $bound_end = $rf->bound_end; }
   }
@@ -299,23 +316,28 @@ sub bound_location_string {
 }
 
 sub get_evidence_data {
-  my ($self, $slice) = @_;
+  my ($self, $slice,$filter) = @_;
   my $hub    = $self->hub;
   my $fset_a = $hub->get_adaptor('get_FeatureSetAdaptor', 'funcgen');
   my $dset_a = $hub->get_adaptor('get_DataSetAdaptor',    'funcgen');
   my %data;
 
+  my %cells;
+  $filter ||= {};
   foreach my $regf_fset (@{$fset_a->fetch_all_by_type('regulatory')}) {
     my $multicell     = $regf_fset->cell_type->name eq 'MultiCell' ? 'MultiCell' : '';
     my $regf_data_set = $dset_a->fetch_by_product_FeatureSet($regf_fset);
     
     foreach my $reg_attr_fset (@{$regf_data_set->get_supporting_sets}) {
+      my $cell_type             = $reg_attr_fset->cell_type->name;
+      $cells{$cell_type} = 1 unless $cell_type eq 'MultiCell';
+      next if $filter->{'cell'} and !grep { $_ eq $cell_type } @{$filter->{'cell'}};
+      next if $filter->{'cells_only'};
       my $reg_attr_dset = $dset_a->fetch_by_product_FeatureSet($reg_attr_fset);
       my @sset          = @{$reg_attr_dset->get_displayable_supporting_sets('result')};
 
       throw("There should only be one DISPLAYABLE supporting ResultSet to display a wiggle track for DataSet:\t" . $reg_attr_dset->name) if scalar @sset > 1; # There should only be one
       
-      my $cell_type             = $reg_attr_fset->cell_type->name;
       my $feature_type          = $reg_attr_fset->feature_type->name;
       my $block_features        = $reg_attr_fset->get_Features_by_Slice($slice);
       my $set                   = $multicell || $reg_attr_fset->is_focus_set ? 'core' : 'non_core';
@@ -326,7 +348,25 @@ sub get_evidence_data {
     }
   }
   
-  return \%data;
+  return { data => \%data, cells => [ keys %cells ] };
+}
+
+sub all_cell_types {
+  my ($self) = @_;
+  my $hub    = $self->hub;
+  my $fset_a = $hub->get_adaptor('get_FeatureSetAdaptor', 'funcgen');
+  my $dset_a = $hub->get_adaptor('get_DataSetAdaptor',    'funcgen');
+
+  my %cells;
+  foreach my $regf_fset (@{$fset_a->fetch_all_by_feature_class('regulatory')}) {
+    my $regf_data_set = $dset_a->fetch_by_product_FeatureSet($regf_fset);
+    foreach my $reg_attr_fset (@{$regf_data_set->get_supporting_sets}) {
+      my $cell_name = $reg_attr_fset->cell_type->name;
+      next if $cell_name eq 'MultiCell';
+      $cells{$cell_name} = 1;
+    }
+  }
+  return [ sort keys %cells ];
 }
 
 ################ Calls for Feature in Detail view ###########################

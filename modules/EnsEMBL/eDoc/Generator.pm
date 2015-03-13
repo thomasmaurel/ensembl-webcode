@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ use EnsEMBL::eDoc::Writer;
 use File::Find;
 
 sub new {
-  ## @constructor
+  ### c
   my ($class, %params) = @_;
   my $writer = new EnsEMBL::eDoc::Writer;
   my $self = {
@@ -178,7 +178,8 @@ sub wanted {
 }
 
 sub generate_html {
-  ## Call all the methods used to generate the eDoc HTML pages
+  ## Call all the Writer methods used to output the eDoc HTML pages
+  ## @return Void
   my ($self, $location, $base, $support) = @_;
 
   my $writer = $self->writer;

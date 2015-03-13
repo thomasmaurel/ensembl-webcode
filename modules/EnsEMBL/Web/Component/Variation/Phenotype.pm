@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ sub content {
   return 'We do not have any external data for this variation' unless (scalar @$data);
 
   my $is_somatic = $object->Obj->is_somatic;
-  my $study      = $is_somatic ? 'Tumour site' : 'Study'; 
+  my $study      = ($is_somatic && $object->Obj->source =~ /COSMIC/i) ? 'Tumour site' : 'Study'; 
 
   # Select only the phenotype features which have the same coordinates as the selected variation
   my $vf_object = ($vf) ? $self->hub->database('variation')->get_VariationFeatureAdaptor->fetch_by_dbID($vf) : undef;
@@ -79,31 +79,18 @@ sub content {
     
     if (!$is_somatic) {
       $table->add_columns(
-        { key => 'allele',  title => 'Most associated allele', align => 'left', sort => 'string'    },
-        { key => 'pvalue',  title => 'P value',                align => 'left', sort => 'numeric' }
+        { key => 'allele',  title => 'Associated allele', align => 'left', sort => 'string', help => 'Most associated risk allele' },
       );
     }
-   
-    # Odds ratio
-    if ($column_flags->{'odds_ratio'}) {    
-      $table->add_columns({ key => 'odds_ratio',  title => 'Odds ratio', align => 'left', sort => 'string' });
-    }
-    # Beta coefficient
-    if ($column_flags->{'beta_coef'}) {
-      $table->add_columns({ key => 'beta_coef',  title => 'Beta coefficient', align => 'left', sort => 'string' });
+
+    if ($column_flags->{'stats'}) {
+      $table->add_columns({ key => 'stats',  title => 'Statistics', align => 'left', sort => 'none' });
     }
 
     $table->add_rows(@$_) for values %$table_rows;
     $html .= sprintf qq{<h3>Significant association(s)</h3>};
     $html .= $table->render;
   }
-  
-  my $info_text = qq{
-    This variant might have phenotypes with non-significant associations, which are not shown on the website. 
-    However these phenotype associations are available through the <a href="/info/data/mysql.html" rel="external">Ensembl Variation databases</a>, 
-    the <a href="/info/docs/api/variation/index.html" rel="external">Ensembl Variation Perl API</a> or the <a href="/biomart/martview" rel="external">Ensembl BioMart</a>.
-  };
-  $html .= $self->_info('Non-significant phenotype associations', $info_text);
   
   return $html;
 };
@@ -118,13 +105,20 @@ sub table_data {
   my %rows;
   my %column_flags;
    
-  my $mart_somatic_url = 'http://www.ensembl.org/biomart/martview?VIRTUALSCHEMANAME=default'.
+  my $mart_somatic_url = $self->hub->species_defs->ENSEMBL_MART_ENABLED ? '/biomart/martview?VIRTUALSCHEMANAME=default'.
                          '&ATTRIBUTES=hsapiens_snp_som.default.snp.refsnp_id|hsapiens_snp_som.default.snp.chr_name|'.
                          'hsapiens_snp_som.default.snp.chrom_start|hsapiens_snp_som.default.snp.associated_gene'.
                          '&FILTERS=hsapiens_snp_som.default.filters.phenotype_description.&quot;###PHE###&quot;'.
-                         '&VISIBLEPANEL=resultspanel';
+                         '&VISIBLEPANEL=resultspanel' : '';
                  
-                 
+  my %clin_review_status = (
+                            'not classified by submitter'       => 0,
+                            'classified by single submitter'    => 1,
+                            'classified by multiple submitters' => 2,
+                            'reviewed by expert panel'          => 3,
+                            'reviewed by professional society'  => 4
+                           );
+
   foreach my $pf (@$external_data) { 
     
     my $phenotype = $pf->phenotype->description;
@@ -150,20 +144,42 @@ sub table_data {
     my $source             = $self->source_link($source_name, $external_id, $pf->external_reference, 1);
     my $external_reference = $self->external_reference_link($pf->external_reference) || $pf->external_reference; # use raw value if can't be made into a link
     my $associated_studies = $pf->associated_studies; # List of Study objects
-    
-    my $clin_sign = $pf->clinical_significance;
-    if ($clin_sign) {
-      $clin_sign = qq{<span class="hidden export">$clin_sign</span><img class="_ht" style="margin-right:5px;vertical-align:top" src="/i/val/clinsig_$clin_sign.png" title="$clin_sign" />};
+    my $attributes         = $pf->get_all_attributes();
+
+    my $clin_sign_list = $pf->clinical_significance;
+    my $clin_sign;
+    if ($clin_sign_list) {
+      # Clinical significance icons
+      $clin_sign .= qq{<span class="hidden export">$clin_sign_list</span>};
+      foreach my $clin_sign_term (split(',',$clin_sign_list)) {
+        my $clin_sign_icon = $clin_sign_term;
+        $clin_sign_icon =~ s/ /-/g;
+        $clin_sign .= qq{<img class="_ht" style="margin-right:5px;vertical-align:top" src="/i/val/clinsig_$clin_sign_icon.png" title="$clin_sign_term" />};
+      }
+
+      # ClinVar review stars
+      if ($attributes->{'review_status'}) {
+        my $clin_status = $attributes->{'review_status'};
+        my $count_stars = $clin_review_status{$clin_status};
+        my $stars = qq{<span class="_ht nowrap" style="margin-left:2px;vertical-align:top" title="$clin_sign_list -  Review status: '$clin_status'">(};
+        for (my $i=1; $i<5; $i++) {
+          my $star_color = ($i <= $count_stars) ? 'gold' : 'grey';
+          $stars .= qq{<img style="vertical-align:top" src="/i/val/$star_color\_star.png" alt="$star_color"/>};
+        }
+        $stars .= qq{)</span>};
+        $clin_sign .= $stars;
+      }
+
       $column_flags{'clin_sign'} = 1;
     }
     
     # Add the supporting evidence source(s)
-    my $a_study_source = '';
+    my $a_study_source = '-';
     if (defined($associated_studies)) {
       $a_study_source = $self->supporting_evidence_link($associated_studies, $pf->external_reference);
     }
 
-    if ($is_somatic) { 
+    if ($is_somatic && $disorder =~ /COSMIC/) {
       my @tumour_info      = split /\:/, $disorder;
       my $tissue           = $tumour_info[1];
       $tissue              =~ s/^\s+//;
@@ -175,39 +191,55 @@ sub table_data {
    
     my $gene         = $self->gene_links($pf->associated_gene);
     my $allele       = $self->allele_link($pf->external_reference, $pf->risk_allele) || $pf->risk_allele;
-    my $variant_link = $self->variation_link($pf->object->stable_id);
+    my $var_names    = ($attributes->{'variation_names'}) ? $attributes->{'variation_names'} : $pf->object->stable_id;
+    my $variant_link = $self->variation_link($var_names);
     my $pval         = $pf->p_value;
-    my $attributes   = $pf->get_all_attributes();
 
     my $disease  = qq{<b>$disorder</b>};
     
     # BioMart link
     my $bm_flag = 0;
-    if ($disease =~ /COSMIC/) { 
+    if ($disease =~ /COSMIC/ && $mart_somatic_url) { 
       if ($pf->adaptor->count_all_by_phenotype_id($id) > 250) {
         $disease_url = $mart_somatic_url;
         $disease_url =~ s/###PHE###/$phenotype/;
-        $disease .= qq{<br /><a href="$disease_url">[View list in BioMart]</a>};
+        $disease .= qq{<br /><a href="$disease_url" class="small">View list in BioMart</a>};
         $bm_flag = 1;
       }
     }
     # Karyotype link
     if ($bm_flag == 0) {
-      $disease .= qq{<br /><a href="$disease_url">[View on Karyotype]</a>} unless ($disease =~ /HGMD/);
+      $disease .= qq{<br /><a href="$disease_url" class="small">View on Karyotype</a>} unless ($disease =~ /HGMD/);
+    }
+
+    # Stats column
+    my $stats_values;
+    my @stats;
+    foreach my $attr ('p_value','odds_ratio', 'beta_coef') {
+      if ($attributes->{$attr}) {
+        my $attr_label = ($attr eq 'beta_coef') ? 'beta_coefficient' : $attr;
+        push @stats, "$attr_label:".$attributes->{$attr};
+        $column_flags{'stats'} = 1;
+      }
+    }
+    if (@stats) {
+      $stats_values  = qq{<table style="border-spacing:0px"><tr><td style="padding:1px 2px"><b>};
+      $stats_values .= join("</td></tr>\n<tr><td style=\"padding:1px 2px\"><span class=\"hidden export\">;</span><b>",map { s/:/:<\/b><\/td><td style="padding:1px 2px">/g; s/_/ /g ;$_ } @stats);
+      $stats_values .= qq{</td></tr>\n</table>};
     }
 
     my $row = {
       disease   => $disease,
       source    => $source,
-      study     => $external_reference,
-      clin_sign => $clin_sign, 
-      genes     => $gene,
-      allele    => $allele,
+      study     => ($external_reference) ? $external_reference : '-',
+      clin_sign => ($clin_sign) ? $clin_sign : '-',
+      genes     => ($gene) ? $gene : '-',
+      allele    => ($allele) ? $allele : '-',
       variant   => $variant_link,
-      pvalue    => $pval
+      stats     => $stats_values
     };
   
-    if ($a_study_source ne ''){
+    if ($a_study_source ne '-'){
       $row->{s_evidence} = $a_study_source;
       $column_flags{s_evidence} = 1;
     }
@@ -342,7 +374,7 @@ sub external_reference_link {
     foreach my $mim (split /\,\s*/, $study) {
       my $id = (split /\:/, $mim)[-1];
       my $sub_link;
-      # Most associated allele
+      # Associated allele
       if (defined($allele)) {
         $sub_link = $self->hub->get_ExtURL_link($mim, 'OMIM', '');
         my @parts = split /\"/, $sub_link;
@@ -408,9 +440,17 @@ sub allele_link {
 
 
 sub variation_link {
-  my ($self, $v) = @_;
-  my $url = $self->hub->url({ type => 'Variation', action => 'Explore', v => $v });
-  return qq{<a href="$url">$v</a>};
+  my $self = shift;
+  my $vars = shift;
+     $vars =~ s/ //g;
+  my $html;
+
+  foreach my $v (split(',', $vars)) {
+    my $url = $self->hub->url({ type => 'Variation', action => 'Explore', v => $v });
+    $html .= ', ' if ($html);
+    $html .= qq{<a href="$url">$v</a>};
+  }
+  return $html;
 }
 
 1;

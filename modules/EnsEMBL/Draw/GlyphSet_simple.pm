@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ package EnsEMBL::Draw::GlyphSet_simple;
 
 use strict;
 
-use Sanger::Graphics::Bump;
 use Bio::EnsEMBL::Feature;
 
 use base qw(EnsEMBL::Draw::GlyphSet);
@@ -73,7 +72,7 @@ sub _init {
   }
   elsif (!scalar(@$features)) {
     return $self->no_features;
-  }  
+  }
   
   my ($font, $fontsize) = $self->get_font_details($self->my_config('font') || 'innertext');
   my $label_overlay     = $self->label_overlay;
@@ -148,8 +147,8 @@ sub _init {
         $tag_start = $x - ($1 eq 'left'  ? (($height / 2) + 1) / $pix_per_bp : 0);
         $tag_end   = $x + ($1 eq 'right' ? (($height / 2) + 1) / $pix_per_bp : 0);
       } else {
-        $tag_start = $start; 
-        $tag_end   = $end;
+        $tag_start = $tag->{'start'} || $start;
+        $tag_end   = $tag->{'end'} || $end;
       }
       
       $img_start = $tag_start if $tag_start < $img_start;
@@ -166,6 +165,10 @@ sub _init {
       next if $row > $depth;
     }
     
+    my ($pattern,$patterncolour,$notags);
+    $pattern = $self->pattern($f) if $self->can('pattern');
+    ($pattern,$patterncolour,$notags) = @$pattern if ref($pattern);
+
     my $colours   = $self->get_colours($f);
     my $composite = $self->Composite;
     my $rowheight = int($height * 1.5);
@@ -216,11 +219,13 @@ sub _init {
         width       => $end - $start + 1,
         height      => $height,
         $colour_key => $colours->{'feature'},
+        pattern     => $pattern,
+        patterncolour => $patterncolour,
         absolutey   => 1,
       }));
     }
     
-    push @tag_glyphs, $self->render_tags(\@tags, $composite, $slice_length, $height, $start, $end, $img_start, $img_end);
+    push @tag_glyphs, $self->render_tags(\@tags, $composite, $slice_length, $height, $start, $end, $img_start, $img_end,$pattern,$patterncolour) unless $notags;
     
     if ($label) {
       my $font_size = $fontsize;
@@ -236,6 +241,8 @@ sub _init {
         
         ## Only add labels above a certain feature size
         if ($tmp_textwidth < $end - $start + 1) {
+          my $colour = $colours->{'label'} eq $colours->{'feature'} ? $colours->{'feature'} =~ /^(black|#000000)$/ ? 'white' : 'black' : $colours->{'label'};
+          $colour = $1 if $label =~ s/\{(.+?)\}//;
           $composite->push($self->Text({
             x         => $start - 1,
             y         => ($height - $text_height)/2 - 1,
@@ -245,7 +252,7 @@ sub _init {
             ptsize    => $font_size,
             halign    => 'center',
             height    => $text_height,
-            colour    => $colours->{'label'} eq $colours->{'feature'} ? $colours->{'feature'} =~ /^(black|#000000)$/ ? 'white' : 'black' : $colours->{'label'},
+            colour    => $colour,
             text      => $label,
             absolutey => 1,
           }));
@@ -294,7 +301,7 @@ sub _init {
 sub render_tags {
   my $self = shift;
   my $tags = shift;
-  my ($composite, $slice_length, $height) = @_;
+  my ($composite,$slice_length,$height,$_x1,$_x2,$_x3,$_x4,$pattern,$patterncolour) = @_;
   my @glyphs;
   
   foreach my $tag (@$tags) {
@@ -310,7 +317,9 @@ sub render_tags {
         width     => $e - $s + 1,
         height    => $height,
         colour    => $tag->{'colour'},
-        absolutey => 1
+        absolutey => 1,
+        pattern => $pattern,
+        patterncolour => $patterncolour,
       }));
     } elsif ($tag->{'style'} eq 'join') {
       my $pos = $self->strand > 0 ? 1 : 0;

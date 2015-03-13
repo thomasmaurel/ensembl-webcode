@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -314,7 +314,7 @@ sub get_individuals {
   if ($options eq 'default') {
     return sort  @{$individual_adaptor->get_default_strains};
   } elsif ($options eq 'reseq') {
-    return @{$individual_adaptor->fetch_all_strains_with_coverage};
+    return @{$individual_adaptor->fetch_all_strains};
   } elsif ($options eq 'reference') {
     return $individual_adaptor->get_reference_strain_name || $self->species;
   }
@@ -380,14 +380,14 @@ sub get_data {
   my $hub                  = $self->hub;
   my $dataset_adaptor      = $hub->get_adaptor('get_DataSetAdaptor', 'funcgen');
   my $associated_data_only = $hub->param('opt_associated_data_only') eq 'yes' ? 1 : undef; # If on regulation page do we show all data or just used to build reg feature?
-  my $reg_object           = $associated_data_only ? $hub->core_objects->{'regulation'} : undef;
+  my $reg_object           = $associated_data_only ? $hub->core_object('regulation') : undef;
   my $count                = 0;
   my @result_sets;
   my %feature_sets_on;
 
   return $data unless scalar keys %$data;
   
-  foreach my $regf_fset (@{$hub->get_adaptor('get_FeatureSetAdaptor', 'funcgen')->fetch_all_by_type('regulatory')}) { 
+  foreach my $regf_fset (@{$hub->get_adaptor('get_FeatureSetAdaptor', 'funcgen')->fetch_all_by_feature_class('regulatory')}) {
     my $regf_data_set = $dataset_adaptor->fetch_by_product_FeatureSet($regf_fset);
     my $cell_line     = $regf_data_set->cell_type->name;
 

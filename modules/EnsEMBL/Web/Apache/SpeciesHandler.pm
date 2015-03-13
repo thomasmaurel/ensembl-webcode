@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -42,8 +42,8 @@ sub handler_species {
   my $seg    = shift @path_segments;
   my $script = $SiteDefs::OBJECT_TO_SCRIPT->{$seg};
   
-  if ($seg eq 'Component' || $seg eq 'ZMenu' || $seg eq 'Config' || $seg eq 'Json') {
-    $type   = shift @path_segments if $SiteDefs::OBJECT_TO_SCRIPT->{$path_segments[0]} || $seg eq 'ZMenu' || $seg eq 'Json';
+  if ($seg eq 'Component' || $seg eq 'ZMenu' || $seg eq 'Config' || $seg eq 'Json' || $seg eq 'Download') {
+    $type   = shift @path_segments if $SiteDefs::OBJECT_TO_SCRIPT->{$path_segments[0]} || $seg eq 'ZMenu' || $seg eq 'Json' || $seg eq 'Download';
     $plugin = shift @path_segments if $seg eq 'Component';
   } else {
     $type = $seg;
@@ -53,11 +53,10 @@ sub handler_species {
   $function = shift @path_segments;
   
   $r->custom_response($_, "/$species/Info/Error/$_") for (NOT_FOUND, HTTP_BAD_REQUEST, FORBIDDEN, AUTH_REQUIRED);
-    
+
   if ($flag && $script) {
     $ENV{'ENSEMBL_FACTORY'}   = 'MultipleLocation' if $type eq 'Location' && $action =~ /^Multi(Ideogram.*|Top|Bottom)?$/;
-    $ENV{'ENSEMBL_COMPONENT'} = join  '::', 'EnsEMBL', $plugin, 'Component', $type, $action =~ s/__/::/gr if $script eq 'Component';
-    
+    $ENV{'ENSEMBL_COMPONENT'} = join  '::', 'EnsEMBL', $plugin, 'Component', $type, $action =~ s/__/::/gr if $script eq 'Component';  
     $redirect_if_different = 0;
   } else {
     $script = $seg;

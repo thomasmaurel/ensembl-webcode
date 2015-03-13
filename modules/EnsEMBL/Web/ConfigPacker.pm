@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ use warnings;
 no warnings qw(uninitialized);
 
 use Bio::EnsEMBL::ExternalData::DAS::SourceParser;
-use Bio::EnsEMBL::ExternalData::DataHub::SourceParser;
 
 use base qw(EnsEMBL::Web::ConfigPacker_base);
 
@@ -73,17 +72,12 @@ sub munge_config_tree {
   $self->_munge_meta;
   $self->_munge_variation;
   $self->_munge_website;
-
-  # get data about file formats from corresponding Perl modules
-  $self->_munge_file_formats;
-
-  # parse the BLAST configuration
-  $self->_configure_blast;
 }
 
 sub munge_config_tree_multi {
   my $self = shift;
   $self->_munge_website_multi;
+  $self->_munge_file_formats;
 }
 
 # Implemented in plugins
@@ -307,11 +301,10 @@ sub _summarise_core_tables {
 #
 
     my $aref =  $dbh->selectall_arrayref(
-      'select sr.name, sr.length 
-         from seq_region as sr, coord_system as cs 
-        where cs.name in( "chromosome", "group" )
-              and cs.attrib like "%default_version%"
-              and cs.coord_system_id = sr.coord_system_id' 
+      'SELECT sr.name, sr.length FROM seq_region sr 
+       INNER JOIN seq_region_attrib sra USING (seq_region_id) 
+       INNER JOIN attrib_type at USING (attrib_type_id)
+       WHERE at.code = "karyotype_rank"' 
     );
     $self->db_tree->{'MAX_CHR_NAME'  } = undef;
     $self->db_tree->{'MAX_CHR_LENGTH'} = undef;
@@ -346,13 +339,14 @@ sub _summarise_core_tables {
 # * Assemblies...
 # This is a bit ugly, because there's no easy way to sort the assemblies via MySQL
   $t_aref = $dbh->selectall_arrayref(
-    'select version, attrib from coord_system where version is not null' 
+    'select version, attrib from coord_system where version is not null order by rank' 
   );
   my (%default, %not_default);
   foreach my $row (@$t_aref) {
     my $version = $row->[0];
-    my $attrib = $row->[1];
+    my $attrib  = $row->[1];
     if ($attrib =~ /default_version/) {
+      $self->db_tree->{'ASSEMBLY_VERSION'} ||= $version; # get top ranked default_version
       $default{$version}++;
     }
     else {
@@ -382,37 +376,19 @@ sub _summarise_xref_types {
   
   return unless $dbh; 
   my @xref_types;
-  my %xrefs_types_hash;
-
-
-  if($self->db_tree->{'XREF_TYPES'}){
-    @xref_types=  split(/,/, $self->db_tree->{'XREF_TYPES'});
-    foreach(@xref_types){
-      my @type_priority=  split(/=/, $_);
-      $xrefs_types_hash{$type_priority[0]}=$type_priority[1];
-    }
-  }
+  my %xrefs_types_hash = %{$self->db_tree->{'XREF_TYPES'}||{}};
 
   my $aref =  $dbh->selectall_arrayref(qq(
-  SELECT distinct(edb.db_display_name), max(edb.priority) as m
+  SELECT distinct(edb.db_display_name) 
     FROM object_xref ox JOIN xref x ON ox.xref_id =x.xref_id JOIN external_db edb ON x.external_db_id = edb.external_db_id
    WHERE edb.type IN ('MISC', 'LIT')
      AND (ox.ensembl_object_type ='Transcript' OR ox.ensembl_object_type ='Translation' )
-   GROUP BY edb.db_display_name
-   ORDER BY m desc) );
-  foreach my $row (@$aref) {
-    if($xrefs_types_hash{$row->[0]} ){
-      $xrefs_types_hash{$row->[0]}= ($row->[1]>$xrefs_types_hash{$row->[0]})?$row->[1]:$xrefs_types_hash{$row->[0]};
-    }else{
-      $xrefs_types_hash{$row->[0]}=$row->[1];
-    }
+   GROUP BY edb.db_display_name) );
+
+  foreach my $row (@$aref) {    
+    $xrefs_types_hash{$row->[0]} = 1;
   }
-  my $xref_types_string="";
-  for my $key ( keys %xrefs_types_hash ) {
-    my $value = $xrefs_types_hash{$key};
-    $xref_types_string.=$key."=".$value.",";
-  }
-  $self->db_tree->{'XREF_TYPES'} = $xref_types_string;
+  $self->db_tree->{'XREF_TYPES'} = \%xrefs_types_hash;
   $dbh->disconnect();
 }
 
@@ -606,17 +582,19 @@ sub _summarise_variation_db {
   $self->db_details($db_name)->{'tables'}{'variation_set'}{'descriptions'} = \%set_descriptions;
   
 #--------- Add in phenotype information
-  my $pf_aref = $dbh->selectall_arrayref(qq{
-    SELECT pf.type, GROUP_CONCAT(DISTINCT s.name), count(pf.phenotype_feature_id)
-    FROM phenotype_feature pf, source s
-    WHERE pf.source_id=s.source_id AND pf.is_significant=1 AND pf.type!='SupportingStructuralVariation'
-    GROUP BY pf.type
-  });
-  
-  for(@$pf_aref) {
-    $self->db_details($db_name)->{'tables'}{'phenotypes'}{'rows'} += $_->[2];
-    $self->db_details($db_name)->{'tables'}{'phenotypes'}{'types'}{$_->[0]}{'count'} = $_->[2];
-    $self->db_details($db_name)->{'tables'}{'phenotypes'}{'types'}{$_->[0]}{'sources'} = $_->[1];
+  if ($code !~ /variation_private/i) {
+    my $pf_aref = $dbh->selectall_arrayref(qq{
+      SELECT pf.type, GROUP_CONCAT(DISTINCT s.name), count(pf.phenotype_feature_id)
+      FROM phenotype_feature pf, source s
+      WHERE pf.source_id=s.source_id AND pf.is_significant=1 AND pf.type!='SupportingStructuralVariation'
+      GROUP BY pf.type
+    });
+
+    for(@$pf_aref) {
+      $self->db_details($db_name)->{'tables'}{'phenotypes'}{'rows'} += $_->[2];
+      $self->db_details($db_name)->{'tables'}{'phenotypes'}{'types'}{$_->[0]}{'count'} = $_->[2];
+      $self->db_details($db_name)->{'tables'}{'phenotypes'}{'types'}{$_->[0]}{'sources'} = $_->[1];
+    }
   }
 
 #--------- Add in somatic mutation information
@@ -809,7 +787,8 @@ sub _summarise_funcgen_db {
       join cell_type c using (cell_type_id)
       join result_set_input using (result_set_id)
       join input_subset on input_subset_id = table_id
-      join experiment using (experiment_id) 
+      join experiment
+        on input_subset.experiment_id = experiment.experiment_id
       join experimental_group g using (experimental_group_id) 
      where feature_class = 'dna_methylation' 
        and table_name = 'input_subset'
@@ -948,25 +927,14 @@ sub _summarise_archive_db {
   return unless $dbh;
 
   my $t_aref = $dbh->selectall_arrayref(
-    'select s.name, r.release_id, rs.assembly_code, rs.initial_release, rs.last_geneset
+    'select s.name, r.release_id, rs.assembly_version, rs.initial_release, rs.last_geneset
        from species as s, ens_release as r, release_species as rs
       where s.species_id =rs.species_id and r.release_id =rs.release_id
-       and rs.assembly_code != ""'
+       and rs.assembly_version != ""'
   );
   foreach my $row ( @$t_aref ) {
     my @A = @$row;
     $self->db_tree->{'ASSEMBLIES'}->{$row->[0]}{$row->[1]}=$row->[2];
-    $self->db_tree->{'INITIAL_GENESETS'}->{$row->[0]}{$row->[1]}=$row->[3];
-    $self->db_tree->{'LATEST_GENESETS'}->{$row->[0]}{$row->[1]}=$row->[4];
-  }
-  $t_aref = $dbh->selectall_arrayref(
-    'select s.name, r.release_id, r.archive
-       from ens_release as r, species as s, release_species as rs
-      where s.species_id = rs.species_id and r.release_id = rs.release_id 
-       and rs.assembly_code != "" and r.online = "Y"'
-  );
-  foreach my $row ( @$t_aref ) {
-    $self->db_tree->{'ENSEMBL_ARCHIVES'}->{$row->[0]}{$row->[1]}=$row->[2];
   }
 
   $t_aref = $dbh->selectall_arrayref('select name, common_name, code, vega from species');
@@ -1050,8 +1018,7 @@ sub _summarise_compara_db {
       where mls.species_set_id = ss.species_set_id
         and ss.genome_db_id = gd.genome_db_id 
         and mls.method_link_id = ml.method_link_id
-        and ml.type not like "%PARALOGUES"
-        and mls.source != "ucsc"
+        and ml.type LIKE "LASTZ%"
       group by mls.method_link_species_set_id, mls.method_link_id
       having count = 1
   ');
@@ -1178,39 +1145,11 @@ sub _summarise_compara_db {
   
   ###################################################################
   ## Section for colouring and colapsing/hidding genes per species in the GeneTree View
-  # 1. Only use the species_sets that have a genetree_display tag
   
-  $res_aref = $dbh->selectall_arrayref(q{SELECT taxon_id, name FROM ncbi_taxa_name WHERE name_class = 'ensembl web display'});
-  
-  foreach my $row (@$res_aref) {
-    # 2.1 For each set, get all the tags
-    my ($taxon_id, $name) = @$row;
-    next unless $name; # Requires a name for the species_set
-    my %ss = (taxon_id => $taxon_id);
-
-    my $res_aref2 = $dbh->selectall_arrayref("SELECT name_class, name FROM ncbi_taxa_name WHERE taxon_id = $taxon_id AND name_class LIKE 'genetree\_%'");
-    foreach my $row2 (@$res_aref2) {
-      my ($tag, $value) = @$row2;
-      $ss{$tag} = $value;
-    }
-    next unless $ss{'genetree_display'};
-
-    # 3. Get the genome_db_ids for each set
-    # This query is a copy of DBSQL::GenomeDBAdaptor
-    $res_aref2 = $dbh->selectall_arrayref("SELECT genome_db_id FROM ncbi_taxa_node ntn1, ncbi_taxa_node ntn2, genome_db gdb WHERE ntn1.taxon_id = $taxon_id AND ntn1.left_index < ntn2.left_index AND ntn1.right_index > ntn2.left_index AND ntn2.taxon_id = gdb.taxon_id");
-    
-    $ss{'genome_db_ids'} = [map {$_->[0]} @$res_aref2];
-    $self->db_tree->{$db_name}{'SPECIES_SET'}{$name} = \%ss;
-  }
-  
-  # We need to add the "special" set of low-coverage species
-  {
-    my $res_aref2 = $dbh->selectall_arrayref(q{SELECT genome_db_id FROM genome_db WHERE is_high_coverage = 0});
-    $self->db_tree->{$db_name}{'SPECIES_SET'}{'low-coverage'} = {
-      genome_db_ids     => [map {$_->[0]} @$res_aref2],
-      genetree_display  => 'default',
-    };
-  }
+  # The config for taxon-groups is in DEFAULTS.ini
+  # Here, we only need to add the "special" set of low-coverage species
+  $res_aref = $dbh->selectall_arrayref(q{SELECT genome_db_id FROM genome_db WHERE is_high_coverage = 0});
+  $self->db_tree->{$db_name}{'SPECIES_SET'}{'LOWCOVERAGE'} = [map {$_->[0]} @$res_aref];
 
   ## End section about colouring and colapsing/hidding gene in the GeneTree View
   ###################################################################
@@ -1266,7 +1205,9 @@ sub _summarise_compara_db {
 sub _summarise_compara_alignments {
   my ($self, $dbh, $db_name, $constraint) = @_;
   my (%config, $lookup_species, @method_link_species_set_ids);
-  
+
+  my $vega = !(defined $constraint);
+
   if ($constraint) {
     $lookup_species              = join ',', map $dbh->quote($_), sort keys %$constraint;
     @method_link_species_set_ids = map keys %$_, values %$constraint;
@@ -1314,11 +1255,20 @@ sub _summarise_compara_alignments {
   }
   
   # get details of alignments
+  my @where;
+  push @where,"is_reference = 0" unless $vega;
+  if(@method_link_species_set_ids) {
+    my $mlss = join(',',@method_link_species_set_ids);
+    push @where,"ga_ref.method_link_species_set_id in ($mlss)";
+  }
+  my $where = '';
+  $where = "WHERE ".join(' AND ',@where) if(@where);
   $q = sprintf('
-    select genomic_align_block_id, method_link_species_set_id, dnafrag_start, dnafrag_end, dnafrag_id
-      from genomic_align %s
-      order by genomic_align_block_id, dnafrag_id',
-      @method_link_species_set_ids ? sprintf 'where method_link_species_set_id in (%s)', join ',', @method_link_species_set_ids : ''
+    select genomic_align_block_id, ga.method_link_species_set_id, ga.dnafrag_start, ga.dnafrag_end, ga.dnafrag_id
+      from genomic_align ga_ref join dnafrag using (dnafrag_id) join genomic_align ga using (genomic_align_block_id)
+      %s
+      order by genomic_align_block_id, ga.dnafrag_id',
+      $where
   );
   
   $sth = $dbh->prepare($q);
@@ -1501,61 +1451,54 @@ sub _summarise_go_db {
 
 sub _summarise_dasregistry {
   my $self = shift;
-  
-  # Registry parsing is lazy so re-use the parser between species'
-  my $das_reg = $self->tree->{'DAS_REGISTRY_URL'} || ( warn "No DAS_REGISTRY_URL in config tree" && return );
-  
-  my @reg_sources = @{ $self->_parse_das_server($das_reg) };
-  # Fetch the sources for the current species
-  my %reg_logic = map { $_->logic_name => $_ } @reg_sources;
-  my %reg_url   = map { $_->full_url   => $_ } @reg_sources;
-  
-  # The ENSEMBL_INTERNAL_DAS_SOURCES section is a list of enabled DAS sources
-  # Then there is a section for each DAS source containing the config
-  $self->tree->{'ENSEMBL_INTERNAL_DAS_SOURCES'}     ||= {};
-  $self->das_tree->{'ENSEMBL_INTERNAL_DAS_CONFIGS'} ||= {};
-  while (my ($key, $val) 
-         = each %{ $self->tree->{'ENSEMBL_INTERNAL_DAS_SOURCES'} }) {
+
+  $self->tree->{'ENSEMBL_INTERNAL_DAS_SOURCES'}     ||= {}; # List of all enabled DAS sources acc to ini files
+  $self->das_tree->{'ENSEMBL_INTERNAL_DAS_CONFIGS'} ||= {}; # Section for each DAS source containing the config to be populated now
+
+  while (my ($key, $val) = each %{ $self->tree->{'ENSEMBL_INTERNAL_DAS_SOURCES'} }) {
 
     # Skip disabled sources
     $val || next;
+
     # Start with an empty config
     my $cfg = $self->tree->{$key};
-    if (!defined $cfg || !ref($cfg)) {
-      $cfg = {};
-    }
-    
-    $cfg->{'logic_name'}      = $key;
-    $cfg->{'category'}        = $val;
-    $cfg->{'homepage'}      ||= $cfg->{'authority'};
+       $cfg = {} unless defined $cfg && ref $cfg; 
 
-    # Make sure 'coords' is an array
-    if( $cfg->{'coords'} && !ref $cfg->{'coords'} ) {
-      $cfg->{'coords'} = [ $cfg->{'coords'} ];
-    }
-    
-    # Check if the source is registered
-    my $src = $reg_logic{$key};
+    $cfg->{'logic_name'}    = $key;
+    $cfg->{'category'}      = $val;
+    $cfg->{'homepage'}    ||= $cfg->{'authority'};
+    $cfg->{'coords'}        = [ $cfg->{'coords'} ] if $cfg->{'coords'} && !ref $cfg->{'coords'}; # Make sure 'coords' is an array
 
-    # Try the actual server URL if it's provided but the registry URI isn't
-    if (!$src && $cfg->{'url'} && $cfg->{'dsn'}) {
-      my $full_url = $cfg->{'url'} . '/' . $cfg->{'dsn'};
-      $src = $reg_url{$full_url};
-      # Try parsing from the server itself
-      if (!$src) {
+    if (!delete $cfg->{'no_parsing'}) {
+
+      my $src;
+
+      # Try the server URL if it's provided
+      if ($cfg->{'url'} && $cfg->{'dsn'}) {
+
+        my $full_url = $cfg->{'url'} . '/' . $cfg->{'dsn'};
+
         eval {
           my %server_url = map {$_->full_url => $_} @{ $self->_parse_das_server($full_url) };
           $src = $server_url{$full_url};
         };
-        if ($@) {
-          warn "DAS source $key might not work - not in registry and server is down";
-        }
-      }
-    }
 
-    # Doesn't have to be in the registry... unfortunately
-    # But if it is, fill in the blanks
-    if ($src) {
+        if ($@) {
+          warn "Skipping DAS source $key - unable to reach source at $full_url";
+          next;
+        }
+
+        if (!$src) {
+          warn "Skipping DAS source $key - unable to parse source at $full_url";
+          next;
+        }
+
+      } else {
+#        warn "Skipping DAS source $key - unable to find 'url' or 'dsn' property in the INI file";
+        next;
+      }
+
+      # fill in any extra info obtained from the das server (data from ini files takes precedence)
       $cfg->{'label'}       ||= $src->label;
       $cfg->{'description'} ||= $src->description;
       $cfg->{'maintainer'}  ||= $src->maintainer;
@@ -1564,16 +1507,7 @@ sub _summarise_dasregistry {
       $cfg->{'dsn'}         ||= $src->dsn;
       $cfg->{'coords'}      ||= [map { $_->to_string } @{ $src->coord_systems }];
     }
-    
-    if (!$cfg->{'url'}) {
-      warn "Skipping DAS source $key - unable to find 'url' property (tried looking in registry and INI)";
-      next;
-    }
-    if (!$cfg->{'dsn'}) {
-      warn "Skipping DAS source $key - unable to find 'dsn' property (tried looking in registry and INI)";
-      next;
-    }
-    
+
     # Add the final config hash to the das packed tree
     $self->das_tree->{'ENSEMBL_INTERNAL_DAS_CONFIGS'}{$key} = $cfg;
   }
@@ -1626,8 +1560,7 @@ sub _munge_meta {
     assembly.accession            ASSEMBLY_ACCESSION
     assembly.web_accession_source ASSEMBLY_ACCESSION_SOURCE
     assembly.web_accession_type   ASSEMBLY_ACCESSION_TYPE
-    assembly.default              ASSEMBLY_NAME
-    assembly.name                 ASSEMBLY_DISPLAY_NAME
+    assembly.name                 ASSEMBLY_NAME
     liftover.mapping              ASSEMBLY_MAPPINGS
     genebuild.method              GENEBUILD_METHOD
     provider.name                 PROVIDER_NAME
@@ -1668,25 +1601,25 @@ sub _munge_meta {
       next unless $meta_hash->{$meta_key};
       
       my $value = scalar @{$meta_hash->{$meta_key}} > 1 ? $meta_hash->{$meta_key} : $meta_hash->{$meta_key}[0]; 
+
+      ## Set version of assembly name that we can use where space is limited 
+      if ($meta_key eq 'assembly.name') {
+        $self->tree->{$species}{'ASSEMBLY_SHORT_NAME'} = (length($value) > 16)
+                  ? $self->db_tree->{'ASSEMBLY_VERSION'} : $value;
+      }
+
       $self->tree->{$species}{$key} = $value;
     }
+
 
     ## Do species group
     my $taxonomy = $meta_hash->{'species.classification'};
     
     if ($taxonomy && scalar(@$taxonomy)) {
-      my $order = $self->tree->{'TAXON_ORDER'};
-      
-      foreach my $taxon (@$taxonomy) {
-        foreach my $group (@$order) {
-          if ($taxon eq $group) {
-            $self->tree->{$species}{'SPECIES_GROUP'} = $group;
-            last;
-          }
-        }
-        
-        last if $self->tree->{$species}{'SPECIES_GROUP'};
-      }
+      my %valid_taxa = map {$_ => 1} @{ $self->tree->{'TAXON_ORDER'} };
+      my @matched_groups = grep {$valid_taxa{$_}} @$taxonomy;
+      $self->tree->{$species}{'SPECIES_GROUP'} = $matched_groups[0] if @matched_groups;
+      $self->tree->{$species}{'SPECIES_GROUP_HIERARCHY'} = \@matched_groups;
     }
 
     ## create lookup hash for species aliases
@@ -1775,10 +1708,6 @@ sub _munge_website {
 
   ## Release info for ID history etc
   $self->tree->{'ASSEMBLIES'}       = $self->db_multi_tree->{'ASSEMBLIES'}{$self->{_species}};
-  $self->tree->{'INITIAL_GENESETS'} = $self->db_multi_tree->{'INITIAL_GENESETS'}{$self->{_species}};
-  $self->tree->{'LATEST_GENESETS'}  = $self->db_multi_tree->{'LATEST_GENESETS'}{$self->{_species}};
-
-  $self->tree->{'ENSEMBL_ARCHIVES'} = $self->db_multi_tree->{'ENSEMBL_ARCHIVES'}{$self->{_species}};
 }
 
 sub _munge_website_multi {
@@ -1789,8 +1718,6 @@ sub _munge_website_multi {
 }
 
 sub _munge_file_formats {
-## TODO - change this to get the required information from
-## individual modules
   my $self = shift;
 
   my %unsupported = map {uc($_) => 1} @{$self->tree->{'UNSUPPORTED_FILE_FORMATS'}||[]};
@@ -1808,8 +1735,24 @@ sub _munge_file_formats {
     'bam'       => {'ext' => 'bam', 'label' => 'BAM',       'display' => 'graph', 'indexed' => 1},
     'bigwig'    => {'ext' => 'bw',  'label' => 'BigWig',    'display' => 'graph', 'indexed' => 1},
     'bigbed'    => {'ext' => 'bb',  'label' => 'BigBed',    'display' => 'graph', 'indexed' => 1},
-    'vcf'       => {'ext' => 'vcf', 'label' => 'VCF',       'display' => 'graph', 'indexed' => 1},
     'datahub'   => {'ext' => 'txt', 'label' => 'TrackHub',  'display' => 'graph', 'indexed' => 1},
+    'vcf'       => {'ext' => 'vcf', 'label' => 'VCF',       'display' => 'graph'},
+    'vcfi'      => {'ext' => 'vcf', 'label' => 'VCF (indexed)', 'display' => 'graph', 'indexed' => 1},
+    'fasta'     => {'ext' => 'fa',   'label' => 'FASTA'},
+    'clustalw'  => {'ext' => 'aln',  'label' => 'CLUSTALW'},
+    'msf'       => {'ext' => 'msf',  'label' => 'MSF'},
+    'mega'      => {'ext' => 'meg',  'label' => 'Mega'},
+    'newick'    => {'ext' => 'nh',   'label' => 'Newick'},
+    'nexus'     => {'ext' => 'nex',  'label' => 'Nexus'},
+    'nhx'       => {'ext' => 'nhx',  'label' => 'NHX'},
+    'orthoxml'  => {'ext' => 'xml',  'label' => 'OrthoXML'},
+    'phylip'    => {'ext' => 'phy',  'label' => 'Phylip'},
+    'phyloxml'  => {'ext' => 'xml',  'label' => 'PhyloXML'},
+    'pfam'      => {'ext' => 'pfam', 'label' => 'Pfam'},
+    'psi'       => {'ext' => 'psi',  'label' => 'PSI'},
+    'rtf'       => {'ext' => 'rtf',  'label' => 'RTF'},
+    'stockholm' => {'ext' => 'stk',  'label' => 'Stockholm'},
+    'emboss'    => {'ext' => 'txt',  'label' => 'EMBOSS'},
   );
 
   ## Munge into something useful to this website
@@ -1822,7 +1765,7 @@ sub _munge_file_formats {
     if ($details->{'indexed'}) {
       push @remote, $format;
     }
-    else {
+    elsif ($details->{'display'}) {
       push @upload, $format;
     }
   }
@@ -1831,59 +1774,5 @@ sub _munge_file_formats {
   $self->tree->{'REMOTE_FILE_FORMATS'} = \@remote;
   $self->tree->{'DATA_FORMAT_INFO'} = \%formats;
 }
-
-sub _configure_blast {
-  my $self = shift;
-  my $tree = $self->tree;
-  my $species = $self->species;
-  $species =~ s/ /_/g;
-  my $method = $self->full_tree->{'MULTI'}{'ENSEMBL_BLAST_METHODS'};
-  foreach my $blast_type (keys %$method) { ## BLASTN, BLASTP, BLAT, etc
-    next unless ref($method->{$blast_type}) eq 'ARRAY';
-    my @method_info = @{$method->{$blast_type}};
-    my $search_type = uc($method_info[0]); ## BLAST or BLAT at the moment
-    my $sources = $self->full_tree->{'MULTI'}{$search_type.'_DATASOURCES'};
-    $tree->{$blast_type.'_DATASOURCES'}{'DATASOURCE_TYPE'} = $method_info[1]; ## dna or peptide
-    my $db_type = $method_info[2]; ## dna or peptide
-    foreach my $source_type (keys %$sources) { ## CDNA_ALL, PEP_ALL, etc
-      my $source_label = $sources->{$source_type};
-      next if $source_type eq 'DEFAULT';
-      next if ($db_type eq 'dna' && $source_type =~ /^PEP/);
-      next if ($db_type eq 'peptide' && $source_type !~ /^PEP/);
-      if ($source_type eq 'CDNA_ABINITIO') { ## Does this species have prediction transcripts?
-        next unless 1;
-      }
-      elsif ($source_type eq 'RNA_NC') { ## Does this species have RNA data?
-        next unless 1;
-      }
-      elsif ($source_type eq 'PEP_KNOWN') { ## Does this species have species-specific protein data?
-        next unless 1;
-      }
-      my $assembly = $tree->{$species}{'ASSEMBLY_NAME'}; 
-      (my $type = lc($source_type)) =~ s/_/\./ ;
-      if ($type =~ /latestgp/) {
-        if ($search_type ne 'BLAT') {
-          $type =~ s/latestgp(.*)/dna$1\.toplevel/;
-          $type =~ s/.masked/_rm/;
-          $type =~ s/.soft/_sm/;
-          my $repeat_date = $self->db_tree->{'REPEAT_MASK_DATE'} || $self->db_tree->{'DB_RELEASE_VERSION'};
-          my $file = sprintf( '%s.%s.%s.%s', $species, $assembly, $repeat_date, $type ).".fa";
-#           print "AUTOGENERATING $source_type......$file\n";
-          $tree->{$blast_type.'_DATASOURCES'}{$source_type} = {'file' => $file, 'label' => $source_label};
-        }
-      } 
-      else {
-        $type = "ncrna" if $type eq 'rna.nc';
-        my $version = $self->db_tree->{'DB_RELEASE_VERSION'} || $SiteDefs::ENSEMBL_VERSION;
-        my $file = sprintf( '%s.%s.%s.%s', $species, $assembly, $version, $type ).".fa";
-#        print "AUTOGENERATING $source_type......$file\n";
-        $tree->{$blast_type.'_DATASOURCES'}{$source_type} = {'file' => $file, 'label' => $source_label};
-      }
-    }
-#   use Data::Dumper;
-#   warn "TREE $blast_type = ".Dumper($tree->{$blast_type.'_DATASOURCES'});
-  }
-}
-
 
 1;

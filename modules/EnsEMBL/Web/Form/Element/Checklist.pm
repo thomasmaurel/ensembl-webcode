@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,16 +20,14 @@ package EnsEMBL::Web::Form::Element::Checklist;
 
 use strict;
 
-use base qw(
-  EnsEMBL::Web::DOM::Node::Element::Div
-  EnsEMBL::Web::Form::Element
-);
+use base qw(EnsEMBL::Web::Form::Element::Div);
 
 use constant {
-  CSS_CLASS_SUBHEADING    => 'optgroup',
-  CSS_CLASS_INNER_WRAPPER => 'ff-checklist',
-  CSS_CLASS_INNER_LABEL   => 'ff-checklist-label',
-  SELECT_DESELECT_CAPTION => '<u><b>Select/deselect all</b></u>'
+  CSS_CLASS_SUBHEADING      => 'optgroup',
+  CSS_CLASS_INNER_WRAPPER   => 'ff-checklist',
+  CSS_CLASS_INNER_LABEL     => 'ff-checklist-label',
+  SELECT_DESELECT_CAPTION   => '<b>Select/deselect all</b>',
+  SELECT_DESELECT_JS_CLASS  => '_selectall'
 };
 
 sub _is_multiple {
@@ -41,9 +39,10 @@ sub _is_multiple {
 sub configure {
   ## @overrides
   my ($self, $params) = @_;
-  
-  $self->set_attribute('id',    $params->{'wrapper_id'})    if exists $params->{'wrapper_id'};
-  $self->set_attribute('class', $params->{'wrapper_class'}) if exists $params->{'wrapper_class'};
+
+  # configure the wrapping parent div
+  delete $params->{'children'};
+  $self->SUPER::configure($params);
 
   # default attributes for the checkboxs/radiobuttons
   $self->{'__option_name'}        = $params->{'name'} || '';
@@ -58,11 +57,14 @@ sub configure {
     $params->{'value'}  = [ shift @{$params->{'value'}} ] unless $self->_is_multiple;
     $checked_values     = { map { $_ => 1 } @{$params->{'value'}} };
   }
-  if (exists $params->{'selectall'}) {
+  if ($params->{'selectall'}) {
     $self->add_option({
       'value'         => 'select_all',
-      'caption'       => {'inner_HTML' => $self->SELECT_DESELECT_CAPTION}  ## TODO - this needs a class name for general purpose use
+      'class'         => $self->SELECT_DESELECT_JS_CLASS,
+      'caption'       => {'inner_HTML' => $self->SELECT_DESELECT_CAPTION},
+      'checked'       => $params->{'selectall'} eq 'on',
     });
+    $self->set_attribute('class', $self->SELECT_DESELECT_JS_CLASS);
   }
   if (exists $params->{'values'}) {
     for (@{$params->{'values'}}) {
@@ -71,8 +73,6 @@ sub configure {
       $self->add_option($_);
     }
   }
-
-  $self->force_wrapper if $params->{'force_wrapper'};
 }
 
 sub add_option {

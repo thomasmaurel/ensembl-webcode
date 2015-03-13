@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ use List::Util qw(min max);
 
 use base qw(EnsEMBL::Web::ZMenu);
 
+use EnsEMBL::Web::Tools::Sanitize qw(strict_clean);
+
 sub content {
   my $self       = shift;
   my $hub        = $self->hub;
@@ -43,9 +45,14 @@ sub content {
   
   if ($type eq 'bigbed') {
     my %feats    = $glyphset->features; # bigbed returns a stupid data structure
-       @features = grep !($_->can('score') && $_->score == 0), map { ref $_->[0] eq 'ARRAY' ? @{$_->[0]} : @$_ } values %feats;
+
+    @features = map { ref $_->[0] eq 'ARRAY' ? @{$_->[0]} : @$_ } values %feats;
   } else {
     @features = @{$glyphset->features};
+  }
+  my $id = $hub->param('id');
+  if($id && $glyphset->can('feature_id')) {
+    @features = grep { $glyphset->feature_id($_) eq $id } @features;
   }
   
   if (scalar @features > 5) {
@@ -62,23 +69,30 @@ sub content {
 
 # This is a hack, we really need an order to be supplied by the glyphset
 sub sorted_extra_keys {
-  my ($self,$extra) = @_;
+  my ($self,$extra,$order) = @_;
 
-  my %sort;
-  foreach my $k (keys %$extra) {
-    next if $k =~ /^_type/ or $k =~ /^item_colour/;
-    my $v = $k;
-    $v = "A $v" if /start$/;
-    $v = "B $v" if /end$/;
-    $sort{$k} = $v;
+  if($order) {
+    return grep { !/^_type/ and !/^item_colour/ } @$order;
+  } else {
+    my %sort;
+    foreach my $k (keys %$extra) {
+      next if $k =~ /^_type/ or $k =~ /^item_colour/;
+      my $v = $k;
+      $v = "A $v" if /start$/;
+      $v = "B $v" if /end$/;
+      $sort{$k} = $v;
+    }
+
+    return sort { $sort{$a} <=> $sort{$b} } keys %sort;
   }
-
-  return sort { $sort{$a} <=> $sort{$b} } keys %sort;
 }
 
 sub feature_content {
   my ($self, $feature, $i) = @_;
   my %extra  = ref $feature ne 'HASH' && $feature->can('extra_data') && ref $feature->extra_data eq 'HASH' ? %{$feature->extra_data} : ();
+  my $extra_order;
+  $extra_order = $feature->extra_data_order if ref $feature ne 'HASH' && $feature->can('extra_data_order');
+
   my $start  = $feature->{'start'} + $self->hub->param('click_start') - 1;
   my $end    = $feature->{'end'} + $self->hub->param('click_start') - 1;
   my $single = $start == $end;
@@ -89,7 +103,7 @@ sub feature_content {
   $self->new_feature;
 
   my $caption = '';
-  if(ref($feature) eq 'HASH' or $type eq 'bigbed') {
+  if(ref($feature) eq 'HASH' or !$feature->id) {
     if($single) { $caption = $start; } else { $caption = "$start-$end"; }
   } else {
     $caption = $feature->id;
@@ -110,12 +124,30 @@ sub feature_content {
     { type => 'Hit start',  label => $feature->{'hstart'}  },
     { type => 'Hit end',    label => $feature->{'hend'}    },
     { type => 'Hit strand', label => $feature->{'hstrand'} },
-    { type => 'Score',      label => $feature->{'score'}   },
+    { type => 'Score',      label => $feature->{'score'}, name => 'score' },
   );
+
+  if(ref $feature ne 'HASH' && $feature->can('id') && $feature->id ne $caption) {
+    push @entries, { type => 'Name', label => $feature->id, name => 'name' };
+  }
+
+  # Replace fields with name in autosql (only score for now)
+  if(ref $feature ne 'HASH' && $feature->can('real_name')) {
+    foreach my $e (@entries) {
+      next unless $e->{'name'};
+      my $name = $feature->real_name($e->{'name'});
+      $e->{'type'} = $self->format_type(undef,$name) unless $name eq $e->{'name'};
+    }
+  }
+
+  for($self->sorted_extra_keys(\%extra,$extra_order)) {
+    push @entries, {
+      type => $self->format_type($feature,$_),
+      label_html => join(', ', map { strict_clean ($_) } @{$extra{$_}})
+    };
+  }
   
-  push @entries, { type => $self->format_type($_), label => join(', ', @{$extra{$_}}) } for $self->sorted_extra_keys(\%extra);
-  
-  $self->add_entry($_) for grep $_->{'label'}, @entries;
+  $self->add_entry($_) for grep { $_->{'label'} or $_->{'label_html'} } @entries;
 }
 
 sub summary_content {
@@ -136,13 +168,17 @@ sub summary_content {
   $self->caption(sprintf '%s:%s-%s summary', $self->click_location);
   
   $self->add_entry({ type => 'Feature count', label => scalar @$features });
-  $self->add_entry({ type => 'Min score',     label => $min              });
-  $self->add_entry({ type => 'Mean score',    label => $mean / $i        });
-  $self->add_entry({ type => 'Max score',     label => $max              });
+  if($i) {
+    $self->add_entry({ type => 'Min score',  label => $min              });
+    $self->add_entry({ type => 'Mean score', label => $mean / $i        });
+    $self->add_entry({ type => 'Max score',  label => $max              });
+  }
 }
 
 sub format_type {
-  my ($self, $type) = @_;
+  my ($self,$feature, $type) = @_;
+
+  $type = $feature->real_name($type) if $feature and $feature->can('real_name');
   $type =~ s/(.)([A-Z])/$1 $2/g;
   $type =~ s/_/ /g;
   return ucfirst lc $type;

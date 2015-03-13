@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ use strict;
 
 use EnsEMBL::Web::Constants; 
 use EnsEMBL::Web::Cache;
-use Bio::EnsEMBL::Compara::GenomeDB;
+use Bio::EnsEMBL::Compara::Homology;
 
 use Time::HiRes qw(time);
 
@@ -52,8 +52,8 @@ sub availability {
     if ($obj->isa('Bio::EnsEMBL::ArchiveStableId')) {
       $availability->{'history'} = 1;
     } elsif ($obj->isa('Bio::EnsEMBL::Gene')) {
-      my $member      = $self->database('compara') ? $self->database('compara')->get_GeneMemberAdaptor->fetch_by_source_stable_id('ENSEMBLGENE', $obj->stable_id) : undef;
-      my $pan_member  = $self->database('compara_pan_ensembl') ? $self->database('compara_pan_ensembl')->get_GeneMemberAdaptor->fetch_by_source_stable_id('ENSEMBLGENE', $obj->stable_id) : undef;
+      my $member      = $self->database('compara') ? $self->database('compara')->get_GeneMemberAdaptor->fetch_by_stable_id($obj->stable_id) : undef;
+      my $pan_member  = $self->database('compara_pan_ensembl') ? $self->database('compara_pan_ensembl')->get_GeneMemberAdaptor->fetch_by_stable_id($obj->stable_id) : undef;
       my $counts      = $self->counts($member, $pan_member);
       my $rows        = $self->table_info($self->get_db, 'stable_id_event')->{'rows'};
       my $funcgen_res = $self->database('funcgen') ? $self->table_info('funcgen', 'feature_set')->{'rows'} ? 1 : 0 : 0;
@@ -64,44 +64,37 @@ sub availability {
       $availability->{'has_gene_tree'}        = $member ? $member->has_GeneTree : 0;
       $availability->{'can_r2r'}              = $self->hub->species_defs->R2R_BIN;
       if ($availability->{'can_r2r'}) {
-        my $tree = $self->database('compara') ? $self->database('compara')->get_GeneTreeAdaptor->fetch_default_for_Member($member) : undef;
-        $availability->{'has_2ndary'}         = $tree && $tree->get_tagvalue('ss_cons') ? 1 : 0;
+        my $tree = $availability->{'has_gene_tree'} ? $self->database('compara')->get_GeneTreeAdaptor->fetch_default_for_Member($member) : undef;
+        $availability->{'has_2ndary_cons'}    = $tree && $tree->get_tagvalue('ss_cons') ? 1 : 0;
+        $availability->{'has_2ndary'}         = ($availability->{'has_2ndary_cons'} || ($obj->canonical_transcript && scalar(@{$obj->canonical_transcript->get_all_Attributes('ncRNA')}))) ? 1 : 0;
       }
 
       $availability->{'alt_allele'}           = $self->table_info($self->get_db, 'alt_allele')->{'rows'};
       $availability->{'regulation'}           = !!$funcgen_res; 
       $availability->{'has_species_tree'}     = $member ? $member->has_GeneGainLossTree : 0;
-      $availability->{'has_gene_tree'}        = $member ? $member->has_GeneTree : 0; 
-      $availability->{'can_r2r'}              = $self->hub->species_defs->R2R_BIN;
-      if ($availability->{'can_r2r'}) {
-        my $tree = $self->database('compara') ? $self->database('compara')->get_GeneTreeAdaptor->fetch_default_for_Member($member) : undef;
-        $availability->{'has_2ndary'}         = $tree && $tree->get_tagvalue('ss_cons') ? 1 : 0; 
-      }
       $availability->{'family'}               = !!$counts->{families};
+      $availability->{'family_count'}         = $counts->{families};
       $availability->{'not_rnaseq'}           = $self->get_db eq 'rnaseq' ? 0 : 1;
       $availability->{"has_$_"}               = $counts->{$_} for qw(transcripts alignments paralogs orthologs similarity_matches operons structural_variation pairwise_alignments);
       $availability->{'multiple_transcripts'} = $counts->{'transcripts'} > 1;
       $availability->{'not_patch'}            = $obj->stable_id =~ /^ASMPATCH/ ? 0 : 1; ## TODO - hack - may need rewriting for subsequent releases
+      $availability->{'has_alt_alleles'} =  scalar @{$self->get_alt_alleles};
       
-      my $phen_avail = 0;
       if ($self->database('variation')) {
-        my $pfa = Bio::EnsEMBL::Registry->get_adaptor($self->species, 'variation', 'PhenotypeFeature');
-        $phen_avail = $pfa->count_all_by_Gene($self->Obj) ? 1 : 0;
-        
-        if(!$phen_avail) {
-          my $hgncs =  $obj->get_all_DBEntries('hgnc') || [];
-          
+        my $phen_count  = 0;
+        my $pfa         = Bio::EnsEMBL::Registry->get_adaptor($self->species, 'variation', 'PhenotypeFeature');
+        $phen_count     = $pfa->count_all_by_Gene($self->Obj);
+
+        if (!$phen_count) {
+          my $hgncs = $obj->get_all_DBEntries('hgnc') || [];
+
           if(scalar @$hgncs && $hgncs->[0]) {
             my $hgnc_name = $hgncs->[0]->display_id;
-            if ($hgnc_name) {
-              
-              # this method is super-fast as it uses some direct SQL on a nicely indexed table
-              $phen_avail = ($pfa->_check_gene_by_HGNC($hgnc_name)) ? 1 : 0;
-            }
+            $phen_count   = $pfa->_check_gene_by_HGNC($hgnc_name) if $hgnc_name; # this method is super-fast as it uses some direct SQL on a nicely indexed table
           }
         }
+        $availability->{'has_phenotypes'} = $phen_count;
       }
-      $availability->{'phenotype'} = $phen_avail;
 
       if ($self->database('compara_pan_ensembl')) {
         $availability->{'family_pan_ensembl'} = !!$counts->{families_pan};
@@ -141,6 +134,7 @@ sub counts {
 #      similarity_matches => $self->count_xrefs
       similarity_matches => $self->get_xref_available,
       operons => 0,
+      alternative_alleles =>  scalar @{$self->get_alt_alleles},
     };
     if ($obj->feature_Slice->can('get_all_Operons')){
       $counts->{'operons'} = scalar @{$obj->feature_Slice->get_all_Operons};
@@ -199,32 +193,6 @@ sub get_xref_available{
   return $available;
 }
 
-sub count_homologues {
-  my ($self, $compara_dbh) = @_;
-  
-  my $counts = {};
-  
-  my $res = $compara_dbh->selectall_arrayref(
-    'select ml.type, h.description, count(*) as N
-      from member as m, homology_member as hm, homology as h,
-           method_link as ml, method_link_species_set as mlss
-     where m.stable_id = ? and hm.member_id = m.member_id and
-           h.homology_id = hm.homology_id and 
-           mlss.method_link_species_set_id = h.method_link_species_set_id and
-           ml.method_link_id = mlss.method_link_id
-     group by description', {}, $self->Obj->stable_id
-  );
-  
-  foreach (@$res) {
-    if ($_->[0] eq 'ENSEMBL_PARALOGUES' && $_->[1] ne 'possible_ortholog') {
-      $counts->{'paralogs'} += $_->[2];
-    } elsif ($_->[1] !~ /^UBRH|BRH|MBRH|RHS$/) {
-      $counts->{'orthologs'} += $_->[2];
-    }
-  }
-  
-  return $counts;
-}
 
 sub _insdc_synonym {
   my ($self,$slice,$name) = @_;
@@ -248,26 +216,34 @@ sub insdc_accession {
   my $csv = $self->Obj->slice->coord_system->version; 
   my $csa = Bio::EnsEMBL::Registry->get_adaptor($self->species,'core',
                                                 'CoordSystem');
-  my $slice;
-  if($self->Obj->slice->is_reference) {
-    $slice = $self->Obj->slice->sub_Slice($self->Obj->start,
-                                          $self->Obj->end);
-  } else {
-    # Try to project to supercontig (aka scaffold)
-    foreach my $level (qw(supercontig scaffold)) {
-      next unless $csa->fetch_by_name($level,$csv);
-      my $gsa = $self->Obj->project($level,$csv);
-      if(@$gsa==1) {
-        $slice = $gsa->[0]->to_Slice;
-        last;
+  # 0 = look on chromosome
+  # 1 = look on supercontig/scaffold
+  # maybe in future 2 = ... ?
+  for(my $method = 0;$method < 2;$method++) {
+    my $slice;
+    if($method == 0) {
+      $slice = $self->Obj->slice->sub_Slice($self->Obj->start,
+                                            $self->Obj->end);
+    } elsif($method == 1) {
+      # Try to project to supercontig (aka scaffold)
+      foreach my $level (qw(supercontig scaffold)) {
+        next unless $csa->fetch_by_name($level,$csv);
+        my $gsa = $self->Obj->project($level,$csv);
+        if(@$gsa==1) {
+          $slice = $gsa->[0]->to_Slice;
+          last;
+        }
+      }
+    }
+    if($slice) {
+      my $name = $self->_insdc_synonym($slice,'INSDC');
+      if($name) {
+        return join(':',$slice->coord_system->name,$csv,$name,
+                      $slice->start,$slice->end,$slice->strand);
       }
     }
   }
-  return undef unless $slice;
-  my $name = $self->_insdc_synonym($slice,'INSDC');
-  return undef unless $name;
-  return join(':',$slice->coord_system->name,$csv,$name,
-                  $slice->start,$slice->end,$slice->strand);
+  return undef;
 }
 
 sub count_xrefs {
@@ -543,15 +519,15 @@ sub get_all_families {
     my $genes = [];
     my $prots = {};
     foreach my $member (@$members) {
-        my $gene = $member->gene_member->get_Gene;
-        push @$genes, $gene;
-        my $protein = $member->get_Translation;
-          if ($prots->{$gene->stable_id}) {
-            push @{$prots->{$gene->stable_id}}, $protein;
-          }
-          else {
-            $prots->{$gene->stable_id} = [$protein];
-          }
+      my $gene = $member->gene_member->get_Gene;
+      push @$genes, $gene;
+      my $protein = $member->get_Translation;
+      if ($prots->{$gene->stable_id}) {
+        push @{$prots->{$gene->stable_id}}, $protein;
+      }
+      else {
+        $prots->{$gene->stable_id} = [$protein];
+      }
     }
     $info->{'genes'}    = $genes;
     $info->{'proteins'} = $prots;
@@ -566,7 +542,6 @@ sub get_all_families {
           push @{$families->{$id}{'transcripts'}}, $transcript;
         }
         else {
-          my @A = keys %$info;
           $families->{$id} = {'info' => $info, 'transcripts' => [$transcript]};
         }
       }
@@ -665,6 +640,38 @@ sub get_alternative_locations {
   return \@alt_locs;
 }
 
+sub get_desc_mapping {
+### Returns descriptions for ortholog types.
+### TODO - get this info from compara API
+  my ($self, $match_type) = @_;
+  my %desc_mapping;
+
+  my %orth_mapping = (
+      ortholog_one2one          => '1 to 1 orthologue',
+      apparent_ortholog_one2one => '1 to 1 orthologue (apparent)',
+      ortholog_one2many         => '1 to many orthologue',
+      ortholog_many2many        => 'many to many orthologue',
+      possible_ortholog         => 'possible orthologue',
+  );
+  my %para_mapping = (
+      within_species_paralog    => 'paralogue (within species)',
+      other_paralog             => 'other paralogue (within species)',
+      putative_gene_split       => 'putative gene split',
+      contiguous_gene_split     => 'contiguous gene split',
+  );
+
+  if ($match_type eq 'Orthologue') {
+    %desc_mapping = %orth_mapping;
+  }
+  elsif ($match_type eq 'Paralogue') {
+    %desc_mapping = %para_mapping;
+  }
+  else {
+    %desc_mapping = (%orth_mapping, %para_mapping);
+  }
+  return %desc_mapping;
+}
+
 sub get_homology_matches {
   my ($self, $homology_source, $homology_description, $disallowed_homology, $compara_db) = @_;
   #warn ">>> MATCHING $homology_source, $homology_description BUT NOT $disallowed_homology";
@@ -686,23 +693,13 @@ sub get_homology_matches {
     my %homology_list;
 
     # Convert descriptions into more readable form
-    my %desc_mapping = (
-      ortholog_one2one          => '1-to-1',
-      apparent_ortholog_one2one => '1-to-1 (apparent)', 
-      ortholog_one2many         => '1-to-many',
-      possible_ortholog         => 'possible ortholog',
-      ortholog_many2many        => 'many-to-many',
-      within_species_paralog    => 'paralogue (within species)',
-      other_paralog             => 'other paralogue (within species)',
-      putative_gene_split       => 'putative gene split',
-      contiguous_gene_split     => 'contiguous gene split'
-    );
+    my %desc_mapping = $self->get_desc_mapping;
     
     foreach my $display_spp (keys %$homologues) {
       my $order = 0;
       
       foreach my $homology (@{$homologues->{$display_spp}}) { 
-        my ($homologue, $homology_desc, $homology_subtype, $query_perc_id, $target_perc_id, $dnds_ratio, $gene_tree_node_id) = @$homology;
+        my ($homologue, $homology_desc, $species_tree_node, $query_perc_id, $target_perc_id, $dnds_ratio, $gene_tree_node_id, $homology_id) = @$homology;
         
         next unless $homology_desc =~ /$homology_description/;
         next if $disallowed_homology && $homology_desc =~ /$disallowed_homology/;
@@ -711,17 +708,19 @@ sub get_homology_matches {
         next if $homology_list{$display_spp}{$homologue->stable_id} && $homology_desc eq 'other_paralog';
         
         $homology_list{$display_spp}{$homologue->stable_id} = { 
-          homology_desc       => $desc_mapping{$homology_desc} || 'no description',
+          homologue           => $homologue,
+          homology_desc       => $Bio::EnsEMBL::Compara::Homology::PLAIN_TEXT_WEB_DESCRIPTIONS{$homology_desc} || 'no description',
           description         => $homologue->description       || 'No description',
           display_id          => $homologue->display_label     || 'Novel Ensembl prediction',
-          homology_subtype    => $homology_subtype,
+          species_tree_node   => $species_tree_node,
           spp                 => $display_spp,
           query_perc_id       => $query_perc_id,
           target_perc_id      => $target_perc_id,
           homology_dnds_ratio => $dnds_ratio,
           gene_tree_node_id   => $gene_tree_node_id,
+          dbID                => $homology_id,
           order               => $order,
-          location            => sprintf('%s:%s-%s:%s', map $homologue->$_, qw(chr_name chr_start chr_end chr_strand))
+          location            => sprintf('%s:%s-%s:%s', $homologue->dnafrag()->name, map $homologue->$_, qw(dnafrag_start dnafrag_end dnafrag_strand))
         };
         
         $order++;
@@ -734,7 +733,7 @@ sub get_homology_matches {
   return $self->{'homology_matches'}{$key};
 }
 
-sub fetch_homology_species_hash {
+sub get_homologies {
   my $self                 = shift;
   my $homology_source      = shift;
   my $homology_description = shift;
@@ -747,13 +746,13 @@ sub fetch_homology_species_hash {
   my $database = $self->database($compara_db);
   my %homologues;
 
-  return {} unless $database;
+  return unless $database;
   
   $self->timer_push('starting to fetch', 6);
 
-  my $query_member   = $database->get_GeneMemberAdaptor->fetch_by_source_stable_id('ENSEMBLGENE', $geneid);
+  my $query_member   = $database->get_GeneMemberAdaptor->fetch_by_stable_id($geneid);
 
-  return {} unless defined $query_member;
+  return unless defined $query_member;
   
   my $homology_adaptor = $database->get_HomologyAdaptor;
   my $homologies_array = $homology_adaptor->fetch_all_by_Member($query_member); # It is faster to get all the Homologues and discard undesired entries than to do fetch_all_by_Member_method_link_type
@@ -781,9 +780,22 @@ sub fetch_homology_species_hash {
   
   $self->timer_push('classification', 6);
   
+  my $ok_homologies = [];
   foreach my $homology (@$homologies_array) {
-    next unless $homology->description =~ /$homology_description/;
+    push @$ok_homologies, $homology if $homology->description =~ /$homology_description/;
+  }
+  return ($ok_homologies, \%classification, $query_member);
+}
     
+sub fetch_homology_species_hash {
+  my $self                 = shift;
+  my $homology_source      = shift;
+  my $homology_description = shift;
+  my $compara_db           = shift || 'compara';
+  my ($homologies, $classification, $query_member) = $self->get_homologies($homology_source, $homology_description, $compara_db);
+  my %homologues;
+
+  foreach my $homology (@$homologies) {
     my ($query_perc_id, $target_perc_id, $genome_db_name, $target_member, $dnds_ratio);
     
     foreach my $member (@{$homology->get_all_Members}) {
@@ -801,12 +813,12 @@ sub fetch_homology_species_hash {
     
     # FIXME: ucfirst $genome_db_name is a hack to get species names right for the links in the orthologue/paralogue tables.
     # There should be a way of retrieving this name correctly instead.
-    push @{$homologues{ucfirst $genome_db_name}}, [ $target_member, $homology->description, $homology->taxonomy_level, $query_perc_id, $target_perc_id, $dnds_ratio, $homology->{_gene_tree_node_id}];
+    push @{$homologues{ucfirst $genome_db_name}}, [ $target_member, $homology->description, $homology->species_tree_node(), $query_perc_id, $target_perc_id, $dnds_ratio, $homology->{_gene_tree_node_id}, $homology->dbID ];
   }
   
   $self->timer_push('homologies hacked', 6);
   
-  @{$homologues{$_}} = sort { $classification{$a->[2]} <=> $classification{$b->[2]} } @{$homologues{$_}} for keys %homologues;
+  @{$homologues{$_}} = sort { $classification->{$a->[2]} <=> $classification->{$b->[2]} } @{$homologues{$_}} for keys %homologues;
   
   return \%homologues;
 }
@@ -819,7 +831,7 @@ sub get_compara_Member {
   if (!$self->{$cache_key}) {
     my $compara_dba = $self->database($compara_db)              || return;
     my $adaptor     = $compara_dba->get_adaptor('GeneMember')   || return;
-    my $member      = $adaptor->fetch_by_source_stable_id('ENSEMBLGENE', $self->stable_id);
+    my $member      = $adaptor->fetch_by_stable_id($self->stable_id);
     
     $self->{$cache_key} = $member if $member;
   }
@@ -830,6 +842,7 @@ sub get_compara_Member {
 sub get_GeneTree {
   my $self       = shift;
   my $compara_db = shift || 'compara';
+  my $whole_tree = shift;
   my $clusterset_id = $self->hub->param('clusterset_id') || 'default';
   my $cache_key  = sprintf('_protein_tree_%s_%s', $compara_db, $clusterset_id);
 
@@ -841,6 +854,7 @@ sub get_GeneTree {
         $tree = $adaptor->fetch_default_for_Member($member);
     }
     return unless $tree;
+    return $tree if $whole_tree;
     
     $tree->preload;
     $self->{$cache_key} = $tree->root;
@@ -897,10 +911,8 @@ sub get_SpeciesTree {
     my $geneTree = $geneTree_Adaptor->fetch_default_for_Member($member) || return;
     my $cafeTree = $cafeTree_Adaptor->fetch_by_GeneTree($geneTree) || return;		   
     
-    $cafeTree->multifurcate_tree();    
-    my $lca_id   = $cafeTree->lca_id;
-    $cafeTree    = $cafeTree->root;
-    $cafeTree    = $cafeTree->lca_reroot($lca_id) if($collapsability eq 'part');     
+    $cafeTree->multifurcate_tree();
+    $cafeTree    = $cafeTree->root($cafeTree->root->lca_reroot($cafeTree->lca_id)) if($collapsability eq 'part');     
       
     $self->{$cache_key} = $cafeTree;
   }
@@ -1011,7 +1023,7 @@ sub store_TransformedSNPS {
   
   my @transcripts = @{$self->get_all_transcripts};
   if ($self->hub->type eq 'Transcript'){
-    @transcripts = ($self->hub->core_objects->{'transcript'});
+    @transcripts = ($self->hub->core_object('transcript'));
   }
 
   my $included_so;
@@ -1083,7 +1095,7 @@ sub store_ConsequenceCounts {
   
   my @transcripts = @{$self->get_all_transcripts};
   if ($self->hub->type eq 'Transcript'){
-    @transcripts = ($self->hub->core_objects->{'transcript'});
+    @transcripts = ($self->hub->core_object('transcript'));
   }
 
   my $included_so;
@@ -1151,10 +1163,10 @@ sub store_TransformedDomains {
     next unless $transcript->translation; 
     foreach my $pf ( @{$transcript->translation->get_all_ProteinFeatures( lc($key) )} ) { 
 ## rach entry is an arry containing the actual pfam hit, and mapped start and end co-ordinates
-      if (exists $seen{$pf->id}{$pf->start}){ 
+      if (exists $seen{$pf->display_id}{$pf->start}){
         next;
       } else {
-        $seen{$pf->id}->{$pf->start} =1; 
+        $seen{$pf->display_id}->{$pf->start} =1;
         my @A = ($pf);  
         foreach( $transcript->pep2genomic( $pf->start, $pf->end ) ) {
           my $O = $self->munge_gaps( 'transcripts', $_->start - $offset, $_->end - $offset) - $offset; 
@@ -1287,15 +1299,14 @@ sub get_archive_object {
   my $self = shift;
   my $id = $self->stable_id;
   my $archive_adaptor = $self->database('core')->get_ArchiveStableIdAdaptor;
-  my $archive_object = $archive_adaptor->fetch_by_stable_id($id);
-
- return $archive_object;
+  my $archive_object = $archive_adaptor->fetch_by_stable_id($id, 'Gene');
+  return $archive_object;
 }
 
 =head2 history
 
  Arg1        : data object
- Description : gets the archive id history tree based around this ID
+ Description : gets the deduplicated archive id history tree based around this ID
  Return type : listref of Bio::EnsEMBL::ArchiveStableId
                As every ArchiveStableId knows about it's successors, this is
                 a linked tree.
@@ -1309,7 +1320,25 @@ sub history {
   return unless $archive_adaptor;
 
   my $history = $archive_adaptor->fetch_history_tree_by_stable_id($self->stable_id);
+
   return $history;
+}
+
+=head2 get_predecessors
+
+ Arg1        : data object
+ Description : gets the complete archive id history tree based around this ID
+ Return type : listref of Bio::EnsEMBL::ArchiveStableId
+
+=cut
+
+sub get_predecessors {
+  my $self = shift;
+  my $archive_adaptor = $self->database('core')->get_ArchiveStableIdAdaptor;
+  my $archive = $archive_adaptor->fetch_by_stable_id($self->stable_id, 'Gene');
+  return [] unless $archive;
+  my $predecessors = $archive_adaptor->fetch_predecessor_history($archive);
+  return $predecessors;
 }
 
 # Calls for GeneRegulationView 
@@ -1458,9 +1487,10 @@ sub vega_projection {
 }
 
 sub get_similarity_hash {
-  my $self = shift;
+  my ($self, $recurse, $obj) = @_;
+  $obj ||= $self->Obj;
   my $DBLINKS;
-  eval { $DBLINKS = $self->Obj->get_all_DBEntries; };
+  eval { $DBLINKS = $obj->get_all_DBEntries; };
   warn ("SIMILARITY_MATCHES Error on retrieving gene DB links $@") if ($@);
   return $DBLINKS  || [];
 }
@@ -1479,7 +1509,7 @@ sub get_rnaseq_tracks {
 sub can_export {
   my $self = shift;
   
-  return $self->action =~ /^Export$/ ? 0 : $self->availability->{'gene'};
+  return $self->action =~ /^(Export|Sequence|TranscriptComparison|Compara_Alignments|Compara_Tree|SpeciesTree|Compara_Ortholog|Compara_Paralog|Family)$/ ? 0 : $self->availability->{'gene'};
 }
 
 1;

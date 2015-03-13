@@ -1,5 +1,5 @@
 /*
- * Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+ * Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@ pre.wrap            { white-space: pre-wrap; }
 
 div.column-wrapper          { overflow: hidden; position:relative; } /* wraps the columns (position is IE8/9 fix) */
 div.column-two              { float: left; width:50%;       } /* actual column for 2 col layout */
-div.column-three            { float: left; width:33.3333%;  } /* actual column for 3 col layout */
+div.column-three            { float: left; width:33.3%;     } /* actual column for 3 col layout */
 div.column-four             { float: left; width:25%;       } /* actual column for 4 col layout */
 div.column-padding          { margin-left: 0.5em; margin-right: 0.5em; } /* inner div for columns to provide padding */
 
@@ -76,7 +76,7 @@ div.column-right            { margin-left: 0.5em;   margin-right: 0; }
 
 div.box-left                { width:49.5%; float:left; margin-left: 0; margin-right: 0.5%; clear:left; }
 div.box-right               { width:49.5%; float:right; margin-left: 0.5%; margin-right: 0; }
-div.home-wrapper            { float:left; width: 66.6% }
+div.column-twothird         { float:left; width: 66.7% }
 
 /* IE 6 & 7 hacks for above */
 body.ie67 div.column-wrapper,
@@ -121,6 +121,9 @@ div.twocol div.twocol-cell { margin: 0 0 4px; }
 .plain-box                { background-color:[[PANEL_BG]]; border-color: [[PANEL_BORDER]]; }
 .shadow-box               { box-shadow: 2px 2px 4px [[PANEL_BORDER]]; }
 body.ie67 .plain-box      { zoom: 100%; }
+
+.tool-box                 { height: 96px; padding-top: 8px; }
+.tool-box p               { margin-bottom: 8px; text-align: center; }
 
 .bordered     { border:1px solid [[PANEL_BORDER]]; }
 .unbordered   { border:none; padding:8px 12px 0 12px; }
@@ -168,7 +171,7 @@ ul.no-bullet, ul.no-bullet li   { list-style-image: none; list-style: none; }
 
 code { font: 1em andale mono, sans-serif; font-weight: bold; }
 
-.code     { border: 1px solid [[NEUTRAL_BORDER]]; background: [[NEUTRAL_BG]]; padding: 8px !important; }
+.code     { border: 1px solid [[NEUTRAL_BORDER]]; background: [[NEUTRAL_BG]]; padding: 8px !important; overflow: auto; }
 
 .code pre { margin: 0.5em 0 1.5em 0; font: 0.8em andale mono, sans-serif; color: [[CONTRAST_BG]] }
 .code pre:after { content: "."; display: block; height: 0; clear: both; visibility: hidden; }
@@ -190,5 +193,5 @@ a.fn-link { vertical-align:super; font-size:0.7em; text-decoration:none; }
 div.footnotes { margin-top:2em; }
 div.footnotes ol li { font-size:0.9em; }
 
-span.conhelp { border-bottom:1px dotted #999; cursor: help; }
+.conhelp { border-bottom:1px dotted #999; cursor: help; }
 

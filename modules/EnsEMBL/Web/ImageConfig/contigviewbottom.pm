@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ use strict;
 use base qw(EnsEMBL::Web::ImageConfig);
 
 sub init_user           { return $_[0]->load_user_tracks; }
-sub get_sortable_tracks { return grep { $_->get('sortable') && ($_->get('menu') ne 'no' || $_->id eq 'blast') } @{$_[0]->glyphset_configs}; } # Add blast to the sortable tracks
 sub load_user_tracks    { return $_[0]->SUPER::load_user_tracks($_[1]) unless $_[0]->code eq 'set_evidence_types'; } # Stops unwanted cache tags being added for the main page (not the component)
 
 sub glyphset_configs {
@@ -98,11 +97,31 @@ sub init {
     [ 'seq',       'Sequence',            'sequence', { display => 'normal', strand => 'b', description => $desc{'seq'},       colourset => 'seq',      threshold => 1,   depth => 1      }],
     [ 'codon_seq', 'Translated sequence', 'codonseq', { display => 'off',    strand => 'b', description => $desc{'codon_seq'}, colourset => 'codonseq', threshold => 0.5, bump_width => 0 }],
     [ 'codons',    'Start/stop codons',   'codons',   { display => 'off',    strand => 'b', description => $desc{'codons'},    colourset => 'codons',   threshold => 50                   }],
-    [ 'blast',     'BLAT/BLAST hits',     '_blast',   { display => 'normal', strand => 'b',                                    colourset => 'feature',  sub_type => 'blast', menu => 'no' }]
   );
   
   $self->add_track('decorations', 'gc_plot', '%GC', 'gcplot', { display => 'normal',  strand => 'r', description => 'Shows percentage of Gs & Cs in region', sortable => 1 });
   
+  my $gencode_version = $self->hub->species_defs->GENCODE ? $self->hub->species_defs->GENCODE->{'version'} : '';
+  $self->add_track('transcript', 'gencode', "Basic Gene Annotations from GENCODE $gencode_version", '_gencode', {
+      labelcaption => "Genes (Basic set from GENCODE $gencode_version)",
+      display     => 'off',       
+      description => 'The GENCODE set is the gene set for human and mouse. GENCODE Basic is a subset of representative transcripts (splice variants).',
+      sortable    => 1,
+      colours     => $self->species_defs->colour('gene'), 
+      label_key  => '[biotype]',
+      logic_names => ['proj_ensembl',  'proj_ncrna', 'proj_havana_ig_gene', 'havana_ig_gene', 'ensembl_havana_ig_gene', 'proj_ensembl_havana_lincrna', 'proj_havana', 'ensembl', 'mt_genbank_import', 'ensembl_havana_lincrna', 'proj_ensembl_havana_ig_gene', 'ncrna', 'assembly_patch_ensembl', 'ensembl_havana_gene', 'ensembl_lincrna', 'proj_ensembl_havana_gene', 'havana'], 
+      renderers   =>  [
+        'off',                     'Off',
+        'gene_nolabel',            'No exon structure without labels',
+        'gene_label',              'No exon structure with labels',
+        'transcript_nolabel',      'Expanded without labels',
+        'transcript_label',        'Expanded with labels',
+        'collapsed_nolabel',       'Collapsed without labels',
+        'collapsed_label',         'Collapsed with labels',
+        'transcript_label_coding', 'Coding transcripts only (in coding genes)',
+      ],
+    }) if($gencode_version);
+
   if ($self->species_defs->ALTERNATIVE_ASSEMBLIES) {
     foreach my $alt_assembly (@{$self->species_defs->ALTERNATIVE_ASSEMBLIES}) {
       $self->add_track('misc_feature', "${alt_assembly}_assembly", "$alt_assembly assembly", 'alternative_assembly', { 
@@ -139,10 +158,25 @@ sub init {
   # Add in additional tracks
   $self->load_tracks;
   $self->load_configured_das;
+  $self->load_configured_datahubs;
   $self->load_configured_bigwig;
   $self->load_configured_bigbed;
 #  $self->load_configured_bam;
-  
+
+  #switch on some variation tracks by default
+  if ($self->species_defs->DEFAULT_VARIATION_TRACKS) {
+    while (my ($track, $style) = each (%{$self->species_defs->DEFAULT_VARIATION_TRACKS})) {
+      $self->modify_configs([$track], {display => $style});
+    }
+  }
+  elsif ($self->hub->database('variation')) {
+    my $tracks = [qw(variation_feature_variation)];
+    if ($self->species_defs->databases->{'DATABASE_VARIATION'}{'STRUCTURAL_VARIANT_COUNT'}) {
+      push @$tracks, 'variation_feature_structural_smaller';
+    }
+    $self->modify_configs($tracks, {display => 'compact'});
+  }
+
   # These tracks get added after the "auto-loaded tracks get addded
   if ($self->species_defs->ENSEMBL_MOD) {
     $self->add_track('information', 'mod', '', 'text', {

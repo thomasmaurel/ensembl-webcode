@@ -1,5 +1,5 @@
 /*
- * Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+ * Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ Ensembl.Panel.Masthead = Ensembl.Panel.extend({
       $.ajax({
         url: this.href,
         success: function () {
-          var lis = li.siblings();
+          var lis = li.parents('.dropdown').find('.recent li');
           
           li.remove();
           panel.deleteFromDropdown(lis);

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -46,22 +46,49 @@ sub render {
   my $html           = ''; 
 
   my $rss_url = $sd->ENSEMBL_TIPS_RSS;
-  my $tips = $MEMD && $MEMD->get('::TIPS') || [];
+  my $tips = $MEMD && $MEMD->get('::TIPS') || {};
   
+  my %categories = (
+                    'new' => 'New!',
+                    'did-you-know' => 'Did you know...?', 
+                    );
+
   ## Check the cache, then fetch new tips
-  unless (@$tips && $rss_url) {
-    $tips = $self->get_rss_feed($hub, $rss_url);
+  foreach my $cat (keys %categories) {
+    (my $cat_url = $rss_url) =~ s/feed\/$/category\/$cat\/feed\//;
+    unless (scalar(@{$tips->{$cat}||[]}) && $cat_url) {
+      $tips->{$cat} = $self->get_rss_feed($hub, $cat_url);
 
-    if ($tips && @$tips) {
-      $_->{'content'} = encode_utf8($_->{'content'}) for @$tips;
-      $MEMD->set('::TIPS', $tips, 3600, qw(STATIC TIPS)) if $MEMD;
+      if (scalar(@{$tips->{$cat}||[]})) {
+        $_->{'content'} = encode_utf8($_->{'content'}) for @{$tips->{$cat}};
+      }
     }
+    $MEMD->set('::TIPS', $tips, 3600, qw(STATIC TIPS)) if $MEMD;
   }
 
-  ## Now pick a random tip and display it
-  if (scalar(@$tips)) {
-    $html .= sprintf q(<div class="info-box did-you-know"><h3>Did you know&hellip;?</h3>%s</div>), $tips->[ int(rand(scalar(@$tips))) ]->{'content'};
+  $html .= '<div class="did-you-know"><ul class="bxslider">';
+
+  ## We want all the news plus some random tips
+  my $limit = 5;
+
+  my @tips_to_show = map {[$categories{'new'}, $_->{'content'}]} @{$tips->{'new'}};
+
+  ## Random did-you-knows
+  my $to_add = $limit - scalar(@tips_to_show);
+  srand;
+
+  for (my $i = 0; $i < $to_add; $i++) {
+    my $j = int(rand (scalar(@{$tips->{'did-you-know'}}) - 1));
+    push @tips_to_show, [$categories{'did-you-know'}, $tips->{'did-you-know'}[$j]{'content'}];
+    splice @{$tips->{'did-you-know'}}, $j, 1;
   }
+
+  ## Build HTML list
+  foreach (@tips_to_show) {
+    $html .= sprintf('<li><div><b>%s</b><br />%s</div></li>', $_->[0], $_->[1]);
+  }
+
+  $html .= '</ul></div>';
 
   return $html;
 }

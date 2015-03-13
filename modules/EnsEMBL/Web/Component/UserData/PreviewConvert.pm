@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,6 +37,10 @@ sub caption {
 
 sub content {
   my $self = shift;
+
+  if ($self->hub->param('error')) {
+    return $self->error();
+  }
   my $object = $self->object;
   my $html = qq(<h2>Preview converted file(s)</h2>
 <p>The first ten lines of each file are displayed below. Click on the file name to download the complete file</p>
@@ -79,6 +83,15 @@ sub content {
     }
   }
   
+  return $html;
+}
+
+sub error { 
+  my $self = shift;
+
+  my $html = qq(<h2>Preview converted file(s)</h2>);
+  $html .= '<p>Sorry, there was a problem uploading your data.</p>';
+  $html .= "<p>Error: ".$self->hub->param('error')."</p>";
   return $html;
 }
 

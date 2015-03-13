@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ sub new {
   my ($class, $hub) = @_;
 
     my $self = {
+    'SITE' => lc($hub->species_defs->ENSEMBL_SUBTYPE || $hub->species_defs->ENSEMBL_SITETYPE),
     'NAME' => $hub->species_defs->multidb->{'DATABASE_PRODUCTION'}{'NAME'},
     'HOST' => $hub->species_defs->multidb->{'DATABASE_PRODUCTION'}{'HOST'},
     'PORT' => $hub->species_defs->multidb->{'DATABASE_PRODUCTION'}{'PORT'},
@@ -52,24 +53,106 @@ sub db {
   return $self->{'dbh'};
 }
 
-sub fetch_changelog {
-### Selects all changes for a given release and returns them as an arrayref of hashes
+sub fetch_headlines {
   my ($self, $criteria) = @_;
   my $changes = [];
   return [] unless $self->db;
 
-  my ($sql, $sql2);
-  my @args = ($criteria->{'release'});
+  my $limit = $criteria->{'limit'};
 
-  my $species_filter  = $criteria->{'species'}  ? ' s.species_id DESC, ' : '';
-  my $filter          = $criteria->{'limit'}
-    ? "ORDER BY $species_filter c.priority DESC LIMIT $criteria->{'limit'}"
-    : "ORDER BY$species_filter c.priority DESC";
+  my $sql = qq(
+      SELECT
+        changelog_id, title
+      FROM
+        changelog
+      WHERE 
+        release_id = ?
+        AND site_type = ?
+        AND status = 'handed_over'
+        AND category != 'other'
+      ORDER BY priority DESC
+      LIMIT $limit
+  );
+  my @args = ($criteria->{'release'}, $self->{'SITE'});
 
+  my $sth = $self->db->prepare($sql);
+  $sth->execute(@args);
+
+  while (my @data = $sth->fetchrow_array()) {
+    my $record = {
+      'id'            => $data[0],
+      'title'         => $data[1],
+    };
+    push @$changes, $record;
+  }
+
+  return $changes;
+}
+
+sub fetch_changelog {
+### Selects all changes for the given criteria and returns them as an arrayref of hashes
+  my ($self, $criteria) = @_;
+  my $changes = [];
+  return [] unless $self->db;
+  my ($sql, $sql2, @args, $filter);
+
+  ## By default, only fetch news for this site
+  my $site_override = $criteria->{'site_type'};
+  if ($site_override) {
+    unless ($site_override eq 'all') {
+      if (ref($site_override) eq 'ARRAY') {
+        $filter = '(';
+        my @types;
+        foreach (@$site_override) {
+          push @args, lc($_);
+          push @types, ' c.site_type = ? ';
+        }
+        $filter .= join(' OR ', @types);
+        $filter = ')';
+      }
+      else {
+        push @args, lc($site_override); 
+        $filter = ' c.site_type = ? AND ';
+      }
+    }
+  }
+  else {
+    push @args, $self->{'SITE'}; 
+    $filter = ' c.site_type = ? AND ';
+  }
+
+  my $order = 'ORDER BY ';
+  $order .= $criteria->{'species'}  ? ' s.species_id DESC, ' : '';
+
+  if ($criteria->{'release'}) {
+    push @args, $criteria->{'release'};
+    $filter .= ' c.release_id = ? AND ';
+  }
+  else {
+    $order .= ' c.release_id DESC, ';
+  }
+
+  if ($criteria->{'category'} || $criteria->{'team'}) {
+    push @args, $criteria->{'category'} if $criteria->{'category'};
+    push @args, $criteria->{'team'} if $criteria->{'team'};
+    $filter .= ' (';
+    $filter .= ' c.category = ? ' if $criteria->{'category'};
+    $filter .= ' OR ' if ($criteria->{'category'} && $criteria->{'team'});
+    $filter .= ' c.team = ? ' if $criteria->{'team'};
+    $filter .= ') AND ';
+  }
+
+  $order .= 'c.priority DESC ';
+
+  if ($criteria->{'limit'}) {
+    $order .= 'LIMIT '.$criteria->{'limit'};
+  }
+ 
   if ($criteria->{'species'}) {
     $sql = qq(
       SELECT
-        c.changelog_id, c.title, c.content, c.team, c.category, s.species_id
+        c.changelog_id, c.title, c.content, c.team, c.category, 
+        c.release_id, c.site_type, s.species_id
       FROM
         changelog as c
       LEFT JOIN 
@@ -79,27 +162,28 @@ sub fetch_changelog {
         species as s
         ON s.species_id = cs.species_id
       WHERE 
+        $filter
         c.title != ''
         AND c.content != ''
         AND c.status = 'handed_over'
-        AND c.release_id = ?
         AND (s.url_name = ? OR s.url_name IS NULL)
-      $filter
+      $order
     );
     push @args, $criteria->{'species'};
   }
   else {
     $sql = qq(
       SELECT
-        c.changelog_id, c.title, c.content, c.team, c.category
+        c.changelog_id, c.title, c.content, c.team, c.category, 
+        c.release_id, c.site_type
       FROM
         changelog as c
       WHERE 
-        c.release_id = ?
-        AND c.title != ''
+        $filter
+        c.title != ''
         AND c.content != ''
         AND c.status = 'handed_over'
-      $filter
+      $order
     );
   }
 
@@ -137,7 +221,7 @@ sub fetch_changelog {
     my $arg2;
     if ($criteria->{'species'}) {
       ## Only get species info if this is in fact a species-specific record!
-      if ($data[4]) {
+      if ($data[7]) {
         $arg2 = $criteria->{'species'};
       }
     }
@@ -161,6 +245,8 @@ sub fetch_changelog {
       'content'       => $data[2],
       'team'          => $data[3],
       'category'      => $data[4],
+      'release'       => $data[5],
+      'site_type'     => $data[6],
       'species'       => $species,
     };
     push @$changes, $record;
@@ -168,6 +254,5 @@ sub fetch_changelog {
 
   return $changes;
 }
-
 
 1;

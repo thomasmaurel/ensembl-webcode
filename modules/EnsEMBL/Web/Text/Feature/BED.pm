@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,18 +25,26 @@ no warnings 'uninitialized';
 use base qw(EnsEMBL::Web::Text::Feature);
 
 sub new {
-  my( $class, $args ) = @_;
-  
-  my $extra     = {
-    'thick_start' => [ $args->[6] ],
-    'thick_end'   => [ $args->[7] ],
-    'item_colour' => [ $args->[8] ],
-    'BlockCount'  => [ $args->[9] ],
-    'BlockSizes'  => [ $args->[10] ],
-    'BlockStart'  => [ $args->[11] ]
-  };
+  my( $class, $args, $extra, $order, $names ) = @_;
 
-  return bless { '__raw__' => $args, '__extra__' => $extra }, $class;
+  unless(defined $extra) {
+    $extra = {};
+  }
+  my @default_extras = qw(thick_start thick_end item_colour
+                            BlockCount BlockSizes BlockStart);
+  foreach my $i (0..$#default_extras) {
+    $extra->{$default_extras[$i]}=$args->[$i+6] if defined $args->[$i+6];
+  }
+  my $more = { map { $_ => [$extra->{$_}] } keys %$extra };
+
+  return bless { '__raw__' => $args, '__extra__' => $more, '__order__' => $order, '__names__' => $names }, $class;
+}
+
+sub extra_data_order { return $_[0]->{'__order__'}; }
+
+sub real_name {
+  return $_[0]->{'__names__'}{$_[1]} || $_[1] if $_[0]->{'__names__'};
+  return $_[1];
 }
 
 sub coords {
@@ -81,6 +89,8 @@ sub score {
 }
 
 sub external_data { my $self = shift; return $self->{'__extra__'} ? $self->{'__extra__'} : undef ; }
+
+sub attribs { my $self = shift; return $self->{'__extra__'} ? $self->{'__extra__'} : {} ; }
 
 sub cigar_string {
   my $self = shift;

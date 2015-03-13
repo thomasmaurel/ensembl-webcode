@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,13 +34,10 @@ sub get_feature_sets {
   my $fg_a_a =  $fg_db->get_AnalysisAdaptor;
   my $fg_fs_a = $fg_db->get_FeatureSetAdaptor;
   my $analysis = $fg_a_a->fetch_by_logic_name($logic_name);
-  return [grep {
-    $_->name !~ /cisRED\s+search\s+regions/i
-  } @{$fg_fs_a->fetch_all_by_feature_class('external',undef,{
-    constraints => {
-      analyses => [$analysis],
-    },
-  })}];
+  return $fg_fs_a->fetch_all_by_feature_class('external', 
+                                               undef,
+                                               {constraints => {analyses => [$analysis]}},
+                                              );
 }
 
 sub features {
@@ -62,6 +59,13 @@ sub features {
   my @fsets = @{$self->get_feature_sets($efg_db)}; 
   my $external_Feature_adaptor  = $efg_db->get_ExternalFeatureAdaptor;
   my $f = $external_Feature_adaptor->fetch_all_by_Slice_FeatureSets($slice, \@fsets);
+
+  my $priority = $self->my_config('priority');
+  if($priority) {
+    my %p;
+    $p{$priority->[$_]} = @$priority-$_ for(0..$#$priority);
+    $f = [ sort { $p{$b->feature_type->name} <=> $p{$a->feature_type->name} } @$f ]; 
+  }
 
   # count used for colour assignment
   my $count = 0;
@@ -91,13 +95,15 @@ sub href {
   return $href;
 }
 
-
-
 sub colour_key {
   my ($self, $f) = @_;
   my $wuc = $self->{'config'}; 
-  my $colour = $wuc->cache($f->display_label); 
-  return $colour;
+
+  my $type = lc $f->feature_type->name;
+  $type =~ s/[^a-z0-9]/_/g;
+  my $colour = $self->my_colour($type,undef,'');
+  return $type if $colour;
+  return $wuc->cache($f->display_label);
 }
 
 

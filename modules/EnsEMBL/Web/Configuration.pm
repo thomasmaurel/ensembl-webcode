@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -42,7 +42,9 @@ sub new {
   $self->add_external_browsers;
   $self->modify_tree;
   $self->set_default_action;
-  $self->set_action($hub->action, $hub->function);
+  my $assume_valid = 0;
+  $assume_valid = 1 if($hub->script eq 'Component');
+  $self->set_action($hub->action, $hub->function,$assume_valid);
   $self->modify_page_elements;
   
   return $self;
@@ -152,7 +154,7 @@ sub tree_cache_key {
 }
 
 sub get_valid_action {
-  my ($self, $action, $function) = @_;
+  my ($self, $action, $function,$assume_valid) = @_;
   
   return $action if $action eq 'Wizard';
   
@@ -166,14 +168,13 @@ sub get_valid_action {
     $node     = $tree->get_node($action);
     $node_key = $action;
   }
-
-  if ($node) {
+  if ($node && !$assume_valid) {
     $self->{'availability'} = $object->availability if $object;
     unless ($node->get('type') =~ /view/ && $self->is_available($node->get('availability'))) {
       $node = $tree->get_node('Unknown');
     }
   }
-  else {
+  elsif (!$node) {
     $node = $tree->get_node('Unknown');
   }
   return $node->id;

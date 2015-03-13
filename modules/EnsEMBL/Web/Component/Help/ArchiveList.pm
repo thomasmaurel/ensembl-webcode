@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ no warnings "uninitialized";
 use URI::Escape qw(uri_unescape);
 
 use EnsEMBL::Web::OldLinks qw(get_archive_redirect);
+use EnsEMBL::Web::DBSQL::ArchiveAdaptor;
 
 use base qw(EnsEMBL::Web::Component::Help);
 
@@ -78,31 +79,28 @@ sub content {
   ## NB: we create an array of links in ascending date order so we can build the
   ## 'New genebuild' bit correctly, then we reverse the links for display
   
+  my $adaptor   = EnsEMBL::Web::DBSQL::ArchiveAdaptor->new($self->hub);
   if ($species) {
-    $archives     = $species_defs->get_config($species, 'ENSEMBL_ARCHIVES') || {};
-    $assemblies   = $species_defs->get_config($species, 'ASSEMBLIES')       || {};
-    $initial_sets = $species_defs->get_config($species, 'INITIAL_GENESETS') || {};
-    $latest_sets  = $species_defs->get_config($species, 'LATEST_GENESETS')  || {};
-    
+    $archives     = $adaptor->fetch_archives_by_species($species); 
     if (scalar grep $_ != $current, keys %$archives) {
-      if ($type =~ /\.html/ || $action =~ /\.html/) {
-        foreach (sort keys %$archives) {
+      if ($path =~ /\.html$/) {
+        ## Static (or pseudostatic) pages
+        foreach (sort {$b <=> $a} keys %$archives) {
           next if $_ == $current;
-          push @links, $self->output_link($archives, $_, $url, $assemblies->{$_}, $initial_sets, $latest_sets);
+          push @links, $self->output_link($archives, $_, $url);
         }
       }
-      
-      # species home pages
-      if ($type eq 'Info') {
-        foreach (reverse sort keys %$archives) {
+      elsif ($type eq 'Info') {
+        # species home pages
+        foreach (sort {$b <=> $a} keys %$archives) {
           next if $_ == $current;
-          push @links, $self->output_link($archives, $_, $url, $assemblies->{$_}, $initial_sets, $latest_sets);
+          push @links, $self->output_link($archives, $_, $url);
         }
       } else {
         my $releases = get_archive_redirect($type, $action, $hub) || [];
         my $missing  = 0;
         
-        foreach my $poss_release (reverse sort keys %$archives) {
+        foreach my $poss_release (sort {$b <=> $a} keys %$archives) {
           next if $poss_release == $current;
           
           my $release_happened = 0;
@@ -118,7 +116,7 @@ sub content {
             $release_happened = 1;
           }
           
-          push @links, $self->output_link($archives, $poss_release, $url, $assemblies->{$poss_release}, $initial_sets, $latest_sets) if $release_happened;
+          push @links, $self->output_link($archives, $poss_release, $url) if $release_happened;
         }
         
         $html .= '<p>Some earlier archives are available, but this view was not present in those releases.</p>' if $missing;
@@ -127,10 +125,9 @@ sub content {
       $html .= '<p>This is a new species, so there are no archives containing equivalent data.</p>';
     }
   } else { # TODO - map static content moves
-    my $archives = $species_defs->ENSEMBL_ARCHIVES;
-       @links    = map { $_ == $current ? () : $self->output_link($archives, $_, $url) } reverse sort keys %$archives;
+    my $archives = $adaptor->fetch_archives_by_species($species_defs->ENSEMBL_PRIMARY_SPECIES); 
+    push @links, map { $_ == $current ? () : $self->output_link($archives, $_, $url) } sort {$b <=> $a} keys %$archives;
   }
- 
   $html .= sprintf '<p>The following archives are available for this page:</p><ul>%s</ul>', join '', @links if scalar @links;
   $html .= '<p><a href="/info/website/archives/" class="cp-external">More information about the Ensembl archives</a></p>';
 
@@ -138,27 +135,34 @@ sub content {
 }
 
 sub output_link {
-  my ($self, $archives, $release, $url, $assembly, $initial_sets, $latest_sets) = @_;
+  my ($self, $archives, $release, $url) = @_;
   my $sitename         = $self->hub->species_defs->ENSEMBL_SITETYPE;
-  my $date             = $archives->{$release};
+  my $assembly         = $archives->{$release}{'assembly'};
+  my $date             = $archives->{$release}{'archive'};
   my $month            = substr $date, 0, 3;
   my $year             = substr $date, 3, 4;
   my $release_date     = "$month $year";
-  my $initial_geneset  = $initial_sets->{$release}    || ''; 
-  my $current_geneset  = $latest_sets->{$release}     || '';
-  my $previous_geneset = $latest_sets->{$release - 1} || '';
+  my $initial_geneset  = $archives->{$release}{'initial_release'}  || ''; 
+  my $current_geneset  = $archives->{$release}{'last_geneset'}  || '';
+  my $previous_geneset = $archives->{$release - 1}{'last_geneset'} || '';
  
-  my $string  = qq{<li><a href="http://$date.archive.ensembl.org/$url" class="cp-external">$sitename $release: $month $year</a>};
-     $string .= sprintf ' (%s)', $assembly if $assembly;
+  my $string;
+  if ($archives->{$release}{'date'}) {
+    $string = qq{<li><a href="http://$date.archive.ensembl.org/$url" class="cp-external">$sitename $release: $month $year</a>};
+    $string .= sprintf ' (%s)', $assembly if $assembly;
 
-  if ($current_geneset) {
-    if ($current_geneset eq $initial_geneset) {
-      $string .= sprintf ' - gene set updated %s', $current_geneset;
-    } elsif ($current_geneset ne $previous_geneset) {
-      $string .= sprintf ' - patched/updated gene set %s', $current_geneset;
+    if ($current_geneset) {
+      if ($current_geneset eq $initial_geneset) {
+        $string .= sprintf ' - gene set updated %s', $current_geneset;
+      } elsif ($current_geneset ne $previous_geneset) {
+        $string .= sprintf ' - patched/updated gene set %s', $current_geneset;
+      }
     }
   }
-  
+  else {
+    $string = sprintf('<li><strong><a href="http://%s.ensembl.org">Ensembl %s</a></strong>: %s', lc($date), $date, $archives->{$release}{'description'});
+  }
+ 
   $string .= '</li>';
   
   return $string;

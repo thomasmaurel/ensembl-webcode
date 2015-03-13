@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,9 +25,8 @@ use strict;
 
 use Time::HiRes qw(time);
 
-use Sanger::Graphics::Bump;
-
 use Bio::EnsEMBL::DnaDnaAlignFeature;
+use Bio::EnsEMBL::Compara::MethodLinkSpeciesSet;
 
 use base qw(EnsEMBL::Draw::GlyphSet_wiggle_and_block);
 use List::Util qw(min max);
@@ -67,7 +66,7 @@ sub draw_features {
   #colours to distinguish alternating features for GenomicAlignBlock objects only 
   my @block_colours;
   if ($constrained_element) {
-      push @block_colours, $feature_colour;
+      @block_colours = ($feature_colour, $feature_colour);
   } else {
       @block_colours =($feature_colour, $self->{'config'}->colourmap->mix($feature_colour,'white',0.5));
 
@@ -222,7 +221,7 @@ sub element_features {
   my $ml = $db->get_adaptor('Method')->_uncached_fetch_by_dbID($mlss_conf->{'METHOD_LINK'});
   my $mlss = Bio::EnsEMBL::Compara::MethodLinkSpeciesSet->new(
     -DBID => $id,
-    -ADAPTOR => $adaptor,
+    -ADAPTOR => $db->get_adaptor('MethodLinkSpeciesSet'),
     -METHOD => $ml,
     -SPECIES_SET_OBJ => $ss
   );

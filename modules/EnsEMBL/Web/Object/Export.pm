@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-Copyright [1999-2014] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -38,14 +38,12 @@ use IO::String;
 use EnsEMBL::Web::Component::Compara_Alignments;
 use EnsEMBL::Web::Document::Table;
 use EnsEMBL::Web::SeqDumper;
-use Bio::EnsEMBL::Compara::Graph::PhyloXMLWriter;
-use Bio::EnsEMBL::Compara::Graph::OrthoXMLWriter;
 
 use base qw(EnsEMBL::Web::Object);
 
 sub caption                { return 'Export Data';                                                      }
-sub get_location_object    { return $_[0]->{'_location'} ||= $_[0]->hub->core_objects->{'location'};    }
-sub get_all_transcripts    { return $_[0]->hub->core_objects->{'gene'}->Obj->get_all_Transcripts || []; }
+sub get_location_object    { return $_[0]->{'_location'} ||= $_[0]->hub->core_object('location');       }
+sub get_all_transcripts    { return $_[0]->hub->core_object('gene')->Obj->get_all_Transcripts || []; }
 sub check_slice            { return shift->get_location_object->check_slice(@_);                        }
 sub get_ld_values          { return shift->get_location_object->get_ld_values(@_);                      }
 sub get_pop_name           { return shift->get_location_object->pop_name_from_id(@_);                   }
@@ -154,15 +152,6 @@ sub config {
         [ 'userdata',  'Uploaded Data' ],
       ]
     },
-#     PSL => {
-#       label => 'PSL Format',
-#       formats => [
-#         [ 'PSL',  'PSL Format' ],
-#       ],
-#       params => [
-#           [ 'name',  'Bed Line Name' ],
-#         ]
-#     },
     flat => {
       label => 'Flat File',
       formats => [
@@ -188,35 +177,18 @@ sub config {
         [ 'vista',    'Vista Format' ]
       ]
     },
-    genetree => {
-      label => 'Gene Tree',
-      formats => [
-        [ 'phyloxml',    'PhyloXML from Compara' ],
-        [ 'phylopan',    'PhyloXML from Pan-taxonomic Compara' ]
-      ],
-      params => [
-        [ 'cdna', 'cDNA rather than protein sequence' ],
-        [ 'aligned', 'Aligned sequences with gaps' ],
-        [ 'no_sequences', 'Omit sequences' ],
-      ]
-    },
-    homologies => {
-      label => 'Homologies',
-      formats => [
-        [ 'orthoxml',    'OrthoXML from Compara' ],
-        [ 'orthopan',    'OrthoXML from Pan-taxonomic Compara' ]
-      ],
-      params => [
-        [ 'possible_orthologs', 'Treat not supported duplications as speciations (makes a non species-tree-compliant tree)' ],
-      ]
-    }  
   };
 
-if(! $self->get_object->can('get_GeneTree') ){
-	delete $self->__data->{'config'}{'genetree'};
-	delete $self->__data->{'config'}{'homologies'};
-}
-  
+  if ($self->function eq 'Location') {
+    $self->__data->{'config'}{'fasta'} = {
+      label => 'FASTA sequence',
+      formats => [
+        [ 'fasta', 'FASTA sequence' ]
+      ],
+      params => []
+    };
+  }
+
   my $func = sprintf 'modify_%s_options', lc $self->function;
   $self->$func if $self->can($func);
   
@@ -291,15 +263,15 @@ sub get_object {
   my $hub   = $self->hub;
   
   if($hub->function eq 'Transcript') {
-    return $self->hub->core_objects->{'transcript'} ;
+    return $self->hub->core_object('transcript');
   }elsif ($hub->function eq 'Gene') {
-    return $self->hub->core_objects->{'gene'};
+    return $self->hub->core_object('gene');
   }elsif ($hub->function eq 'LRG') {
-    return $self->hub->core_objects->{'lrg'};
+    return $self->hub->core_object('lrg');
   }elsif ($hub->function eq 'Variation') {
-    return $self->hub->core_objects->{'variation'};
+    return $self->hub->core_object('variation');
   }else {
-    return $self->hub->core_objects->{'location'};
+    return $self->hub->core_object('location');
   }
 }
 
@@ -370,49 +342,6 @@ sub process {
   }
   
   return ($string . $html) || 'No data available';
-}
-
-sub phyloxml{
-  my ($self,$cdb) = @_;
-  my $params = $self->params;
-  my $handle          = IO::String->new();
-  my $w = Bio::EnsEMBL::Compara::Graph::PhyloXMLWriter->new(
-          -SOURCE => $cdb eq 'compara' ? $SiteDefs::ENSEMBL_SITETYPE:'Ensembl Genomes',
-          -ALIGNED => $params->{'aligned'},
-          -CDNA => $params->{'cdna'},
-          -NO_SEQUENCES => $params->{'no_sequences'},
-          -HANDLE => $handle
-  ); 
-  $self->writexml($cdb, $handle, $w);
-}
-
-sub orthoxml{
-  my ($self,$cdb) = @_;
-  my $params = $self->params;
-  my $handle          = IO::String->new();
-  my $w = Bio::EnsEMBL::Compara::Graph::OrthoXMLWriter->new(
-          -SOURCE => $cdb eq 'compara' ? $SiteDefs::ENSEMBL_SITETYPE:'Ensembl Genomes',
-	    -SOURCE_VERSION => $SiteDefs::SITE_RELEASE_VERSION, 
-          -HANDLE => $handle,
-          -POSSIBLE_ORTHOLOGS => $params->{'possible_orthologs'},
-  ); 
-  $self->writexml($cdb, $handle, $w);
-}
-
-sub writexml{
-  my ($self,$cdb,$handle,$w) = @_;
-  my $hub             = $self->hub;
-  my $object          = $self->get_object;
-  if(! $object->can('get_GeneTree')){return $self->string('no data');}
-  my $tree = $object->get_GeneTree($cdb);
-  $w->write_trees($tree);
-  $w->finish();
-  my $out = ${$handle->string_ref()};
-  do{
-     $out =~ s/</&lt\;/g;
-     $out =~ s/>/&gt\;/g;
-  }unless $hub->param('_format') eq 'TextGz';
-  $self->string($out);
 }
 
 sub fasta {
@@ -557,7 +486,11 @@ sub alignment {
   
   $self->{'alignments_function'} = 'get_SimpleAlign';
   
-  my $alignments = EnsEMBL::Web::Component::Compara_Alignments::get_alignments($self, $self->slice, $hub->param('align'), $hub->species);
+  my $alignments = $self->get_alignments({
+                              'slice' => $self->slice,
+                              'align' => $hub->param('align'), 
+                              'species' => $hub->species
+                          });
   my $export;
 
   my $align_io = Bio::AlignIO->newFh(
@@ -876,7 +809,7 @@ sub feature {
     @mapping_result = qw(seqid source type start end score strand phase);
   }
   %vals = (%vals, (
-     type   => $type || ($feature->can('primary_tag') ? $feature->primary_tag : '.sdf'),
+     type   => $type || ($feature->can('primary_tag') ? $feature->primary_tag : 'sequence_feature'),
      source => $feature->can('source_tag') ? $feature->source_tag  : $feature->can('source') ? $feature->source : 'Ensembl',
      score  => $feature->can('score') ? $feature->score : '.',
      phase  => '.'
