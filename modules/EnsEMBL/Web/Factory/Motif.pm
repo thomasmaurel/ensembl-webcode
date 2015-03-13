@@ -51,15 +51,15 @@ sub createObjects {
     $self->param('fdb', 'funcgen');
   }
   
-  if ($motif) {
-    my $context = $self->param('context') || 1000;
+#  if ($motif) {
+#    my $context = $self->param('context') || 1000;
     
     $self->DataObjects($self->new_object('Motif', $motif, $self->__data));
     
-    $self->generate_object('Regulation');
-  } else {
-    return $self->problem('fatal', "Could not find motif feature $mf", $self->_help("Either $mf does not exist in the current Ensembl database, or there was a problem retrieving it."));
-  }
+#    $self->generate_object('Regulation');
+#  } else {
+#    return $self->problem('fatal', "Could not find motif feature $mf", $self->_help("Either $mf does not exist in the current Ensembl database, or there was a problem retrieving it."));
+#  }
 }
 
 sub _help {
