@@ -338,9 +338,9 @@ sub content {
         my $type = $self->render_consequence_type($mfva);
         
         my $m_allele = $self->trim_large_string($mfva->variation_feature_seq,'mfva_'.$rf->stable_id,25);
-        
+        my $logo_page = $hub->url({'type' => 'Motif', 'action' => 'Summary', 'mf' => $mf->interdb_stable_id});
         my $row = {
-          rf       => sprintf('%s<br/><span class="small" style="white-space:nowrap;"><a href="%s">%s</a></span>', $mf->binding_matrix->name, $url, $rf->stable_id),
+          rf       => sprintf('<a href="%s">%s</a><br/><span class="small" style="white-space:nowrap;"><a href="%s">%s</a></span>', $logo_page, $mf->binding_matrix->name, $url, $rf->stable_id),
           ftype    => $mfva->feature->feature_type->so_name,#'Motif feature',
           allele   => $m_allele,
           type     => $type,
