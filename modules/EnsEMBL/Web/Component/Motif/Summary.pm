@@ -41,13 +41,14 @@ sub content {
   my $bm_link = $self->hub->get_ExtURL_link($self->object->binding_matrix_name, 'JASPAR', $self->object->binding_matrix_name); 
   $summary->add_row('Binding matrix', $bm_link);
   $summary->add_row('Score', '0.935');
+  my $cell_lines = 'HMEC, HUVEC';
+  $summary->add_row('Evidence', $cell_lines);
 
   $html .= $summary->render; 
 
   ## Regulatory context
-  my $motif   = $self->object->Obj;
-  my $regfeat = $self->hub->core_objects->{'regulation'};
-  my $feature_slice = $regfeat->Obj->feature_Slice;
+  my $rf            = $self->hub->core_object('regulation');
+  my $feature_slice = $rf->Obj->feature_Slice;
 
   my $image_config = $self->hub->get_imageconfig('motif_feature');
 
@@ -60,16 +61,15 @@ sub content {
   ## Show the ruler only on the same strand as the motif
   $image_config->modify_configs(
     [ 'ruler', 'scalebar' ],
-    { 'strand', $regfeat->Obj->strand > 0 ? 'f' : 'r' }
+    { 'strand', $rf->Obj->strand > 0 ? 'f' : 'r' }
   );
 
-  my $image = $self->new_image($feature_slice, $image_config, [ $object->stable_id ]);
+  my $image = $self->new_image($feature_slice, $image_config, [ $rf->stable_id ]);
   return if $self->_export_image($image);
 
   $image->imagemap         = 'yes';
   $image->{'panel_number'} = 'top';
   $image->set_button('drag', 'title' => 'Drag to select region');
-
 
   $html .= $image->render;
 
