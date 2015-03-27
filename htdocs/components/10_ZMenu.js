@@ -35,6 +35,8 @@ Ensembl.Panel.ZMenu = Ensembl.Panel.extend({
     this.event      = data.event;
     this.coords     = data.coords || {};
     this.imageId    = data.imageId;
+    this.onclose    = data.onclose; // to be triggered when the zmenu is closed
+    this.context    = data.context; // context to call the 'onclose' on (defaults to the zmenu panel itself)
     this.relatedEl  = data.relatedEl;
     this.areaCoords = $.extend({}, data.area);
     this.location   = 0;
@@ -101,6 +103,9 @@ Ensembl.Panel.ZMenu = Ensembl.Panel.extend({
     
     $('.close', this.el).on('click', function () { 
       panel.hide();
+      if (panel.onclose) {
+        panel.onclose.call(panel.context || panel);
+      }
     });
     
     // The location parameter that is due to be changed has its value replaced with %s
@@ -167,7 +172,7 @@ Ensembl.Panel.ZMenu = Ensembl.Panel.extend({
     var menu    = this.title.split('; ');
     var caption = menu.shift();
     
-    this.buildMenu(menu, caption, link, extra);
+    this.buildMenu(menu, caption, link, extra, true);
   },
   
   populateDas: function () {
@@ -467,7 +472,7 @@ Ensembl.Panel.ZMenu = Ensembl.Panel.extend({
     this.buildMenu(menu, caption);
   },
   
-  buildMenu: function (content, caption, link, extra) {
+  buildMenu: function (content, caption, link, extra, decodeHTML) {
     var body = [];
     var i    = content.length;
     var menu, title, parse, j, row;
@@ -500,8 +505,9 @@ Ensembl.Panel.ZMenu = Ensembl.Panel.extend({
           body.push('<tr>' + row + '</tr>');
         }
       } else {
-        menu = content[i].split(': ');  
-        body.unshift(this.row.apply(this, menu.length > 1 ? [ menu.shift(), menu.join(': ') ] : [ content[i] ]));
+        var kv = decodeHTML ? $('<span/>').html(content[i]).text() : content[i]; // Unescape HTML if needed
+        menu = kv.split(': ');  
+        body.unshift(this.row.apply(this, menu.length > 1 ? [ menu.shift(), menu.join(': ') ] : [ kv ]));
       }
     }
     

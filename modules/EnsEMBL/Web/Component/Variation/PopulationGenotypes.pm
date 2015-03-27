@@ -31,7 +31,7 @@ sub _init {
 sub content {
   my $self   = shift;
   my $object = $self->object;
-
+  my $is_somatic = $object->Obj->has_somatic_source;
   my $freq_data = $object->freqs;
   
   return $self->_info('Variation: ' . $object->name, '<p>No genotypes for this variation</p>') unless %$freq_data;
@@ -39,8 +39,24 @@ sub content {
   my $table_array = $self->format_frequencies($freq_data);
   my $html        = '<a id="IndividualGenotypesPanel_top"></a>';
   
-  if (scalar @$table_array == 1) {
-    $html .= $table_array->[0]->[1]->render; # only one table to render (non-human or if no 1KG data)
+  if (scalar @$table_array == 1 && $is_somatic) {
+    $html .= $table_array->[0]->[1]->render;
+  }
+  elsif (scalar @$table_array == 1) {
+    my ($title, $table, $pop_url) = @{$table_array->[0]};
+    my $id;
+    if ($title =~ /other|inconsistent|population/i) {
+      $id = $title =~ /other/i ? 'other' : ($title =~ /inconsistent/i ? 'inconsistent' : 'nopop');
+    }
+    else {
+      $id = lc($title);
+      $id =~ s/ //g;
+      $id = (split(/\(/,$id))[0];
+    }
+
+    $html .= $self->toggleable_table($title, $id, $table, 1);
+    $html .= $self->generic_group_link($title,$pop_url) if ($pop_url);
+
   } else {
     
     my $species = $self->hub->species;
@@ -61,12 +77,8 @@ sub content {
         $html .= $self->toggleable_table($title, $id, $table, 1);
       }
 
-      if ($pop_url) {
-        $title =~ /^(.+)\s*\(\d+\)/;
-        my $project_name = ($1) ? $1 : $title;
-           $project_name = ($project_name =~ /project/i) ? "<b>$project_name</b>" : ' ';
-        $html .= sprintf('<div style="clear:both"></div><p><a href="%s" rel="external">More information about the %s populations &rarr;</a></p>', $pop_url, $project_name);
-      }
+      $html .= $self->generic_group_link($title,$pop_url) if ($pop_url);
+
       $main_tables_not_empty = scalar(@{$table->{'rows'}}) if ($main_tables_not_empty == 0);
     }
   }
@@ -191,11 +203,13 @@ sub format_table {
 
     ## Get URL
     my $url = $self->pop_url($name, $freq_data->{$pop_id}{'pop_info'}{'PopLink'});
-    $pop_urls{$pop_id} = $url;
-    $urls_seen{$url}++;
+    if ($url) {
+      $pop_urls{$pop_id} = $url;
+      $urls_seen{$url}++;
+    }
 
     ## Make the tree
-    if ($name =~ /_ALL/) {
+    if ($name =~ /(\W+|_)ALL/) {
       $all = $pop_id;
       next;
     }
@@ -231,7 +245,7 @@ sub format_table {
     my $pop_info = $freq_data->{$pop_id}{'pop_info'};
 
     my ($row_class, $group_member);
-    if ($pop_info->{'Name'} =~ /_ALL/) {
+    if ($pop_info->{'Name'} =~ /(\W+|_)ALL/) {
       $row_class = 'supergroup';
     }
     elsif ($tree->{$pop_id}{'children'}) {
@@ -280,8 +294,15 @@ sub format_table {
       
       $pop_row{'Genotype count'}   = join ' , ', sort {(split /\(|\)/, $a)[1] cmp (split /\(|\)/, $b)[1]} values %{$pop_row{'Genotype count'}} if $pop_row{'Genotype count'};
 
+      ## Add the population description: this will appear when the user move the mouse on the population name
+      my $pop_name = $pop_info->{'Name'};
+      if (!$is_somatic && $pop_info->{'Description'}) {
+       $pop_name = qq{<span class="_ht" title="}.$self->strip_HTML($pop_info->{'Description'}).qq{">$pop_name</span>};
+      }
+
       ## Only link on the population name if there's more than one URL for this table
-      my $pop_url                  = scalar(keys %urls_seen) > 1 ? sprintf('<a href="%s" rel="external">%s</a>', $pop_urls{$pop_id}, $pop_info->{'Name'}) : $pop_info->{'Name'};
+      my $pop_url                  = (scalar(keys %urls_seen) > 1 || scalar(keys %pop_urls) == 1 ) ? sprintf('<a href="%s" rel="external">%s</a>', $pop_urls{$pop_id}, $pop_name) : $pop_name;
+
       ## Hacky indent, because overriding table CSS is a pain!
       $pop_row{'pop'}              = $group_member ? '&nbsp;&nbsp;'.$pop_url : $pop_url;
 
@@ -474,6 +495,18 @@ sub no_pop_data {
   $table->add_rows(@rows);
   
   return $table;
+}
+
+sub generic_group_link {
+  my $self    = shift;
+  my $title   = shift;
+  my $pop_url = shift;
+
+  $title =~ /^(.+)\s*\(\d+\)/;
+  my $project_name = ($1) ? $1 : $title;
+  $project_name = ($project_name =~ /project/i) ? "<b>$project_name</b>" : ' ';
+  
+  return sprintf('<div style="clear:both"></div><p><a href="%s" rel="external">More information about the %s populations &rarr;</a></p>', $pop_url, $project_name);
 }
 
 

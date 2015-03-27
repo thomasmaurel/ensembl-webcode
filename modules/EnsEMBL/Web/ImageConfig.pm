@@ -26,10 +26,9 @@ use JSON qw(from_json);
 use URI::Escape qw(uri_unescape);
 
 use Bio::EnsEMBL::ExternalData::DAS::Coordinator;
-use Bio::EnsEMBL::ExternalData::DataHub::SourceParser;
 
-use Sanger::Graphics::TextHelper;
-
+use EnsEMBL::Draw::Utils::TextHelper;
+use EnsEMBL::Web::File::Utils::TrackHub;
 use EnsEMBL::Web::DBSQL::DBConnection;
 use EnsEMBL::Web::Tree;
 
@@ -54,7 +53,7 @@ sub new {
     hub              => $hub,
     _font_face       => $style->{'GRAPHIC_FONT'} || 'Arial',
     _font_size       => ($style->{'GRAPHIC_FONTSIZE'} * $style->{'GRAPHIC_LABEL'}) || 20,
-    _texthelper      => Sanger::Graphics::TextHelper->new,
+    _texthelper      => EnsEMBL::Draw::Utils::TextHelper->new,
     code             => $code,
     type             => $type,
     species          => $species,
@@ -633,10 +632,7 @@ sub load_user_tracks {
     $self->add_das_tracks('user_data', $source);
   }
 
-  # Get the tracks that are temporarily stored - as "files" not in the DB....
-  # Firstly "upload data" not yet committed to the database...
-  # Then those attached as URLs to either the session or the User
-  # Now we deal with the url sources... again flat file
+  ## Data attached via URL
   foreach my $entry ($session->get_data(type => 'url')) {
     next if $entry->{'no_attach'};
     next unless $entry->{'species'} eq $self->{'species'};
@@ -653,7 +649,8 @@ sub load_user_tracks {
       timestamp   => $entry->{'timestamp'} || time,
     };
   }
-  
+ 
+  ## Data uploaded but not saved
   foreach my $entry ($session->get_data(type => 'upload')) {
     next unless $entry->{'species'} eq $self->{'species'};
    
@@ -687,10 +684,12 @@ sub load_user_tracks {
       }));
     }
   }
-  
+
+  ## Data saved by the user  
   if ($user) {
     my @groups = $user->get_groups;
 
+    ## URL attached data
     foreach my $entry (grep $_->species eq $self->{'species'}, $user->get_records('urls'), map $user->get_group_records($_, 'urls'), @groups) {
       $url_sources{'url_' . $entry->code} = {
         source_name => $entry->name || $entry->url,
@@ -705,6 +704,7 @@ sub load_user_tracks {
       };
     }
     
+    ## Uploads that have been saved to the userdata database
     foreach my $entry (grep $_->species eq $self->{'species'}, $user->get_records('uploads'), map $user->get_group_records($_, 'uploads'), @groups) {
       my ($name, $assembly) = ($entry->name, $entry->assembly);
       
@@ -721,6 +721,7 @@ sub load_user_tracks {
     }
   }
   
+  ## Now we can add all remote (URL) data sources
   foreach my $code (sort { $url_sources{$a}{'source_name'} cmp $url_sources{$b}{'source_name'} } keys %url_sources) {
     my $add_method = lc "_add_$url_sources{$code}{'format'}_track";
     
@@ -747,7 +748,7 @@ sub load_user_tracks {
     }
   }
   
-  # We now need to get a userdata adaptor to get the analysis info
+  ## And finally any saved uploads
   if (keys %upload_sources) {
     my $dbs        = EnsEMBL::Web::DBSQL::DBConnection->new($self->{'species'});
     my $dba        = $dbs->get_DBAdaptor('userdata');
@@ -797,8 +798,9 @@ sub _add_datahub {
 
   return ($menu_name, {}) if $self->{'_attached_datahubs'}{$url};
 
-  my $parser   = Bio::EnsEMBL::ExternalData::DataHub::SourceParser->new('hub' => $self->hub);
-  my $hub_info = $parser->get_hub_info($url, $self->species_defs->assembly_lookup); ## Do we have data for this species?
+  my $trackhub  = EnsEMBL::Web::File::Utils::TrackHub->new('hub' => $self->hub, 'url' => $url);
+  my $hub_info = $trackhub->get_hub({'assembly_lookup' => $self->species_defs->assembly_lookup, 
+                                      'parse_tracks' => 1}); ## Do we have data for this species?
   
   if ($hub_info->{'error'}) {
     ## Probably couldn't contact the hub
@@ -811,13 +813,10 @@ sub _add_datahub {
 
     my $assembly = $self->hub->species_defs->get_config($self->species, 'UCSC_GOLDEN_PATH')
                         || $self->hub->species_defs->get_config($self->species, 'ASSEMBLY_VERSION');
-    my $source_list = $hub_info->{'genomes'}{$assembly} || [];
+    my $node = $hub_info->{'genomes'}{$assembly}{'tree'};
    
-    if (scalar @$source_list) {
-      ## Get tracks from hub
-      my $datahub = $parser->parse($source_list);
-  
-      $self->_add_datahub_node($datahub, $menu, $menu_name);
+    if ($node) {
+      $self->_add_datahub_node($node, $menu, $menu_name);
 
       $self->{'_attached_datahubs'}{$url} = 1;
     }
@@ -1129,17 +1128,17 @@ sub _add_bam_track {
 sub _add_bigbed_track {
   my ($self, %args) = @_;
  
-  my $renderers = $args{'source'}{'renderers'} || [
-    'off',     'Off', 
-    'normal',  'Normal', 
-    'labels',  'Labels',
-    'compact', 'Compact',
-  ];
-
+  my $renderers = $args{'source'}{'renderers'};
+  my $strand    = 'b';
+  unless ($renderers) {
+    ($strand, $renderers) = $self->_user_track_settings($args{'source'}{'style'}, 'BIGBED');
+  }
+  
   my $options = {
     external     => 'external',
     sub_type     => 'url',
     colourset    => 'feature',
+    strand       => $strand,
     style        => $args{'source'}{'style'},
     addhiddenbgd => 1,
     max_label_rows => 2,
@@ -1147,15 +1146,13 @@ sub _add_bigbed_track {
 
   if ($args{'view'} && $args{'view'} =~ /peaks/i) {
     $options->{'join'} = 'off';  
-  } else {
-    push @$renderers, ('tiling', 'Wiggle plot');
   } 
   
   $self->_add_file_format_track(
-    format => 'BigBed',
+    format      => 'BigBed',
     description => 'Bigbed file',
-    renderers => $renderers,
-    options => $options,
+    renderers   => $renderers,
+    options     => $options,
     %args,
   );
 }

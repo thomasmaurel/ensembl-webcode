@@ -36,7 +36,7 @@ use strict;
 use HTTP::Tiny;
 use LWP::UserAgent;
 
-use EnsEMBL::Web::File::Utils qw(get_compression);
+use EnsEMBL::Web::File::Utils qw(get_compression uncompress);
 use EnsEMBL::Web::Exceptions;
 
 use Exporter qw(import);
@@ -63,8 +63,25 @@ sub chase_redirects {
     $ua->env_proxy;
     $ua->proxy([qw(http https)], $args->{'hub'}->species_defs->ENSEMBL_WWW_PROXY) || ();
     my $response = $ua->head($url);
-    return $response->is_success ? $response->request->uri->as_string
-                                    : {'error' => [_get_lwp_useragent_error($response)]};
+    if ($response->is_success) {
+      return $response->request->uri->as_string;
+    }
+    else {
+      my $error = _get_lwp_useragent_error($response);
+      if ($error =~ /405/) {
+        ## Try a GET request, if the server is misconfigured
+        $response = $ua->get($url);
+        if ($response->is_success) {
+          return $response->request->uri->as_string;
+        }
+        else {
+          return {'error' => [_get_lwp_useragent_error($response)]};
+        }
+      }
+      else {
+        return {'error' => [$error]};
+      }
+    }
   }
   else {
     my %args = (
@@ -82,7 +99,20 @@ sub chase_redirects {
       return $response->{'url'};
     }
     else {
-      return {'error' => [_get_http_tiny_error($response)]};
+      my $error = _get_http_tiny_error($response);
+      if ($error =~ /405/) {
+        ## Try a GET request, if the server is misconfigured
+        $response = $http->request('GET', $url);
+        if ($response->{'success'}) {
+          return $response->{'url'};
+        }
+        else {
+          return {'error' => [_get_http_tiny_error($response)]};
+        }
+      }
+      else {
+        return {'error' => [$error]};
+      }
     }
   }
 }
@@ -108,6 +138,14 @@ sub file_exists {
     my $response = $ua->head($url);
     unless ($response->is_success) {
       $error = _get_lwp_useragent_error($response);
+      if ($error =~ /405/) {
+        ## Try a GET request, if the server is misconfigured
+        $error = undef;
+        $response = $ua->get($url);
+        unless ($response->is_success) {
+          $error = _get_lwp_useragent_error($response);
+        }  
+      }
     }
   }
   else {
@@ -118,9 +156,17 @@ sub file_exists {
     }
     my $http = HTTP::Tiny->new(%params);
 
-    my $response = $http->request('HEAD', $url);
+    my $response = $http->request('GET', $url);
     unless ($response->{'success'}) {
       $error = _get_http_tiny_error($response);
+      if ($error =~ /405/) {
+        ## Try a GET request, if the server is misconfigured
+        $error = undef;
+        $response = $http->request('GET', $url);
+        unless ($response->{'success'}) {
+          $error = _get_http_tiny_error($response);
+        }  
+      }
     }
   }
 
@@ -162,6 +208,7 @@ sub read_file {
     }
     else {
       $error = _get_lwp_useragent_error($response);
+      warn "!!! ERROR FETCHING FILE $url: $error";
     }
   }
   else {
@@ -172,7 +219,9 @@ sub read_file {
     }
     my $http = HTTP::Tiny->new(%params);
 
-    my $response = $http->request('GET', $url, $args->{'headers'});
+    my @http_params = ('GET', $url);
+    push @http_params, $args->{'headers'} if $args->{'headers'};
+    my $response = $http->request(@http_params);
     if ($response->{'success'}) {
       $content = $response->{'content'};
     }
@@ -193,12 +242,14 @@ sub read_file {
   }
   else {
     my $compression = defined($args->{'compression'}) || get_compression($url);
-    my $uncomp = $compression ? uncompress($content, $compression) : $content;
+    if ($compression) {
+      uncompress(\$content, $compression);
+    }
     if ($args->{'nice'}) {
-      return {'content' => $uncomp};
+      return {'content' => $content};
     }
     else {
-      return $uncomp;
+      return $content;
     }
   }
 }
@@ -276,7 +327,16 @@ sub get_headers {
   $result = $args->{'header'} ? $all_headers->{$args->{'header'}} : $all_headers;
 
   if ($args->{'nice'}) {
-    return $error ? {'error' => [$error]} : {'headers' => $result};
+    if ($error) {
+      if ($error =~ /405/) {
+        ## Some servers don't accept header requests, which is annoying but not fatal
+        $error = 'denied';
+      }
+      return {'error' => [$error]};
+    }
+    else {
+      return {'headers' => $result};
+    }
   }
   else {
     if ($error) {

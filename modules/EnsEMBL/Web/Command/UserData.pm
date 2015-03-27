@@ -81,6 +81,7 @@ sub upload {
   my %args = (
               'hub'             => $self->hub,
               'timestamp_name'  => 1,
+              'absolute'        => 1,
             );
 
   if ($method eq 'url') {
@@ -97,7 +98,7 @@ sub upload {
   }
   else { 
     $args{'file'}   = $hub->input->tmpFileName($hub->param($method));
-    $args{'name'}   = $hub->param($method);
+    $args{'name'}   = "".$hub->param($method); # stringify the filehandle
     $args{'upload'} = 'cgi';
   }
 
@@ -108,6 +109,9 @@ sub upload {
   if ($result->{'error'}) {
     $params->{'filter_module'} = 'Data';
     $params->{'filter_code'}   = 'no_response';
+  } elsif (!$result->{'content'}) {
+    $params->{'filter_module'} = 'Data';
+    $params->{'filter_code'}   = 'empty';
   } else {
     my $response = $file->write($result->{'content'});
   

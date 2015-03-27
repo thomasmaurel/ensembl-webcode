@@ -27,9 +27,9 @@ no warnings 'uninitialized';
 
 use List::Util qw(min max);
 
-use Bio::EnsEMBL::ExternalData::AttachedFormat::BIGBED;
-use Bio::EnsEMBL::ExternalData::BigFile::BigBedAdaptor;
+use Bio::EnsEMBL::IO::Adaptor::BigBedAdaptor;
 
+use EnsEMBL::Web::File::AttachedFormat::BIGBED;
 use EnsEMBL::Web::File::Utils::URL;
 use EnsEMBL::Web::Text::Feature::BED;
 
@@ -58,7 +58,7 @@ sub bigbed_adaptor {
                                                             });
     if ($headers) {
       if ($headers->{'Content-Type'} !~ 'text/html') { ## Not being redirected to a webpage, so chance it!
-        my $ad = Bio::EnsEMBL::ExternalData::BigFile::BigBedAdaptor->new($self->my_config('url'));
+        my $ad = Bio::EnsEMBL::IO::Adaptor::BigBedAdaptor->new($self->my_config('url'));
         $error = "Broken bigbed file" unless $ad->check;
         $self->{'_cache'}->{'_bigbed_adaptor'} = $ad;
       }
@@ -78,7 +78,7 @@ sub format {
   my $self = shift;
 
   my $format = $self->{'_cache'}->{'format'} ||=
-    Bio::EnsEMBL::ExternalData::AttachedFormat::BIGBED->new(
+    EnsEMBL::Web::File::AttachedFormat::BIGBED->new(
       $self->{'config'}->hub,
       "BIGBED",
       $self->my_config('url'),
@@ -214,8 +214,11 @@ sub features {
     } else {
       $default_rgb_string = $self->my_config('colour') || '0,0,0';
     }
-    
+   
     foreach (@$features) {
+      if ($_->external_data->{'BlockCount'}) {
+        $self->{'my_config'}->set('has_blocks', 1);
+      }
       my $colour = $_->external_data->{'item_colour'};
       next if defined $colour && $colour->[0] =~ /^\d+,\d+,\d+$/;
       $_->external_data->{'item_colour'}[0] = $default_rgb_string;
@@ -240,6 +243,7 @@ sub draw_features {
   return join ' or ', @error;
 }
 
+=pod
 sub render_normal {
   my $self = shift;
   $self->SUPER::render_normal(8, 20);  
@@ -256,6 +260,7 @@ sub render_labels {
   $self->{'show_labels'} = 1;
   $self->render_normal(@_);
 }
+=cut
 
 sub render_text { warn "No text renderer for bigbed\n"; return ''; }
 

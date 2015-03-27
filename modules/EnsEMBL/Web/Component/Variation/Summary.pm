@@ -84,7 +84,7 @@ sub content {
     $self->synonyms,
     $self->hgvs,
     $self->sets,
-    ['About this variant', sprintf('This variant %s.', $self->join_with_and(@str_array))]
+    @str_array ? ['About this variant', sprintf('This variant %s.', $self->join_with_and(@str_array))] : ()
   );
 
   return sprintf qq{<div class="summary_panel">$info_box%s</div>}, $summary_table->render;
@@ -259,7 +259,7 @@ sub co_located {
       my $alleles   = ' ('.$_->allele_string.')' if $_->allele_string =~ /\//;
       my $variation = qq{<a href="$link">$v_name</a>$alleles};
       
-      push @{$by_source{$_->source}}, $variation;
+      push @{$by_source{$_->source_name}}, $variation;
     }
     
     if (scalar keys %by_source) {

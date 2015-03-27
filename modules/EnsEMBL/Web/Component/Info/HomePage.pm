@@ -165,7 +165,7 @@ sub assembly_text {
   );
   
   ## Insert dropdown list of other assemblies
-  if (my $assembly_dropdown = $self->assembly_dropodown) {
+  if (my $assembly_dropdown = $self->assembly_dropdown) {
     $html .= '<h3 class="light top-margin">Other assemblies</h3>'.$assembly_dropdown;
   }
 
@@ -339,7 +339,8 @@ sub funcgen_text {
       <h2>Regulation</h2>
       <p><strong>What can I find?</strong> DNA methylation, transcription factor binding sites, histone modifications, and regulatory features such as enhancers and repressors, and microarray annotations.</p>
       <p><a href="/info/genome/funcgen/" class="nodeco">%sMore about the %s regulatory build</a> and <a href="/info/genome/microarray_probe_set_mapping.html" class="nodeco">microarray annotation</a></p>
-      %s',
+      <p><a href="%s" class="nodeco">%sExperimental data sources</a></p>
+      %s %s',
       
       sprintf(
         $self->{'img_link'},
@@ -353,6 +354,8 @@ sub funcgen_text {
 
       sprintf($self->{'icon'}, 'info'), $species_defs->ENSEMBL_SITETYPE,
       
+      $hub->url({'type' => 'Experiment', 'action' => 'Sources', 'ex' => 'all'}), sprintf($self->{'icon'}, 'info'), 
+
       $ftp ? sprintf(
         '<p><a href="%s/regulation/%s/" class="nodeco">%sDownload all regulatory features</a> (GFF)</p>', ## Link to FTP site
         $ftp, lc $species, sprintf($self->{'icon'}, 'download')

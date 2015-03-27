@@ -43,6 +43,7 @@ use EnsEMBL::Draw::Glyph::Text;
 use EnsEMBL::Draw::Glyph::Arc;
 
 use Bio::EnsEMBL::Registry;
+use Bio::EnsEMBL::DnaDnaAlignFeature;
 
 use EnsEMBL::Web::Utils::RandomString qw(random_string);
 

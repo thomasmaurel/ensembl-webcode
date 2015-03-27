@@ -38,11 +38,12 @@ sub draw_features {
   my ($self, $wiggle) = @_; 
   my %data = $self->features;
   
-  return 0 unless keys %data;
+  ## Value to drop into error message
+  return $self->my_config('format').' features' unless keys %data;
   
   if ($wiggle) {
     foreach my $key ($self->sort_features_by_priority(%data)) {
-      my ($features, $config)     = @{$data{$key}};
+      my ($features, $config)     = @{$data{$key}||[]};
       my $graph_type              = ($config->{'useScore'} && $config->{'useScore'} == 4) || ($config->{'graphType'} && $config->{'graphType'} eq 'points') ? 'points' : 'bar';
       my ($min_score, $max_score) = split ':', $config->{'viewLimits'};
       
@@ -61,7 +62,7 @@ sub draw_features {
     }
   }
   
-  return 1;
+  return 0;
 }
 
 sub features {
@@ -98,14 +99,13 @@ sub features {
 
     my $file = EnsEMBL::Web::File::User->new(%args);
 
-    return $self->errorTrack(sprintf 'The file %s could not be found', $self->my_config('caption')) if !$file->exists;
-
     my $response = $file->read;
 
     if (my $data = $response->{'content'}) {
       $parser->parse($data, $self->my_config('format'));
     } else {
-      warn "!!! $response->{'error'}";
+      return $self->errorTrack(sprintf 'Could not read file %s', $self->my_config('caption'));
+      warn "!!! ERROR READING FILE: ".$response->{'error'}[0];
     }
   } 
 

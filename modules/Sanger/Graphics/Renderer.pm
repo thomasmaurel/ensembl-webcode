@@ -91,6 +91,8 @@ our $patterns = {
 
 sub new {
   my ($class, $config, $extra_spacing, $glyphsets_ref) = @_;
+  (my $module = $class) =~ s/Sanger::Graphics/EnsEMBL::Draw/;
+  warn "########### Module $class is deprecated and will be removed in release 82. Please update your code to use $module instead";
   
   my $self = {
     'glyphsets'     => $glyphsets_ref,

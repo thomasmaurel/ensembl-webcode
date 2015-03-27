@@ -79,10 +79,10 @@ sub process {
     unless ($error) {
       ## Write data to output file in desired format
 
+      my %align_formats = EnsEMBL::Web::Constants::ALIGNMENT_FORMATS;
+      my $in_bioperl    = grep { lc($_) eq lc($format) } keys %align_formats;
       ## Alignments and trees are handled by external writers
       if ($hub->param('align') && lc($format) ne 'rtf') {
-        my %align_formats = EnsEMBL::Web::Constants::ALIGNMENT_FORMATS;
-        my $in_bioperl    = grep { lc($_) eq lc($format) } keys %align_formats;
         my %tree_formats  = EnsEMBL::Web::Constants::TREE_FORMATS;
         my $is_tree       = grep { lc($_) eq lc($format) } keys %tree_formats;
         if ($in_bioperl) {
@@ -100,6 +100,11 @@ sub process {
         else {
           $error = 'Output not implemented for format '.$format;
         }
+      }
+      elsif ($in_bioperl) {
+        $error = (!$hub->param('seq_type') || $hub->param('seq_type') eq 'msa') 
+                    ? $self->write_alignment($component)
+                    : $self->write_homologue_seq($component);
       }
       else {
         my $write_method = 'write_'.lc($format);
@@ -438,39 +443,82 @@ sub write_emboss {
 sub write_alignment {
   my ($self, $component) = @_;
   my $hub     = $self->hub;
-  my $format  = $hub->param('format');
-
-  my $export;
-
-  my $align_io = Bio::AlignIO->newFh(
-    -fh     => IO::String->new($export),
-    -format => $format
-  );
-
-  my $data = $component->get_export_data;
-  my $alignment;
-
-  if (ref($data) eq 'ARRAY') {
-    print $align_io $_ for @$data;
+  my $align = $hub->param('align');
+  #foreach (grep { /species_$align/ } $hub->param) {
+  #  warn ">>> PARAM $_ = ".$hub->param($_);
+  #}
+  my ($alignment, $result);
+  my $flag = $align ? undef : 'sequence';
+  my $data = $component->get_export_data($flag);
+  if (!$data) {
+    $result->{'error'} = ['No data returned'];
   }
   else {
-    if (ref($data) =~ 'SimpleAlign') {
-      $alignment = $data;
+    my $export;
+    my $format  = $hub->param('format');
+    my $align_io = Bio::AlignIO->newFh(
+      -fh     => IO::String->new($export),
+      -format => $format
+    );
+
+    if (ref($data) eq 'ARRAY') {
+      print $align_io $_ for @$data;
     }
     else {
-      $self->object->{'alignments_function'} = 'get_SimpleAlign';
+      if (ref($data) =~ 'AlignedMemberSet') {
+        $data = $data->get_SimpleAlign;
+      }
+      if (ref($data) =~ 'SimpleAlign') {
+        $alignment = $data;
+      }
+      else {
+        $self->object->{'alignments_function'} = 'get_SimpleAlign';
 
-      $alignment = $self->object->get_alignments({
+        $alignment = $self->object->get_alignments({
           'slice'   => $data->slice,
           'align'   => $hub->param('align'),
           'species' => $hub->species,
         });
+      }
+
+      print $align_io $alignment;
     }
 
-    print $align_io $alignment;
+    $result = $self->write_line($export);
   }
+  return $result->{'error'} || undef;
+}
 
-  my $result = $self->write_line($export);
+sub write_homologue_seq {
+  my ($self, $component) = @_;
+  my $hub     = $self->hub;
+  my $result;
+
+  my $data = $component->get_export_data('sequence');
+  if ($data) {
+    my $format    = lc($hub->param('format'));
+    my $file      = $self->{'__file'};
+    my $file_path = $file->absolute_write_path;
+    $file->touch;
+    my %params = (-format => $format, -ID_TYPE=>'STABLE_ID');
+    if ($hub->param('seq_type') eq 'dna') {
+      $params{'-SEQ_TYPE'} = 'cds';
+    }
+    eval {
+      $data->print_sequences_to_file($file_path, %params);
+    };
+    if ($@) {
+      $result = {'error' => ['Error writing sequences to file']};
+      warn ">>> ERROR THROWN BY print_sequences_to_file: $@";
+    }
+    else {
+      $result = {'content' => $file->read};
+    }
+  }
+  else {
+    $result = {'error' => ['No data returned by API']};
+  } 
+ 
   return $result->{'error'} || undef;
 }
 

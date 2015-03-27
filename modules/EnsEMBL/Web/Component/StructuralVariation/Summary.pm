@@ -56,7 +56,7 @@ sub content {
                       $avail->{has_phenotypes} eq "1" ? "phenotype" : "phenotypes"
                   ) if($avail->{has_phenotypes});
 
-  push @str_array, sprintf('supported by <a href="%s">%s %s of evidence</a>', 
+  push @str_array, sprintf('is supported by <a href="%s">%s %s of evidence</a>',
                       $evidence_url, 
                       $avail->{has_supporting_structural_variation}, 
                       $avail->{has_supporting_structural_variation} eq "1" ? "piece" : "pieces" 
@@ -74,7 +74,7 @@ sub content {
     $self->location($mappings),
     $self->size($mappings),
     $validation ? ['Validation status', $validation] : (),
-    ["About this structural variant", sprintf('This structural variant %s.', $self->join_with_and(@str_array))]
+    @str_array ? ["About this structural variant", sprintf('This structural variant %s.', $self->join_with_and(@str_array))] : ()
   )->render;
 }
 

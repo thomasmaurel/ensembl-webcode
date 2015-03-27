@@ -39,5 +39,18 @@ sub new {
   return $class->SUPER::new(%args);
 }
 
+sub read_url {
+  my $self = shift;
+  my $path = $self->SUPER::read_url(@_);
+  return $self->{'absolute'} ? $path : $self->hub->species_defs->ENSEMBL_STATIC_SERVER.$path;
+}
+
+sub write_url {
+  my $self = shift;
+  my $path = $self->SUPER::write_url(@_);
+  return $self->{'absolute'} ? $path : $self->hub->species_defs->ENSEMBL_STATIC_SERVER.$path;
+}
+
+
 1;
 

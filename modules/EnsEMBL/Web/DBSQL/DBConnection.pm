@@ -142,7 +142,6 @@ sub get_databases_species {
       if (!defined($dba) || $database eq 'glovar'){
         $self->_get_databases_common( $species, $database );
       } else{
-        $dba->include_failed_variations(1) if $database eq 'variation';
         $self->{'_dbs'}->{$species}->{$database} = $dba;
       }
     }
@@ -310,15 +309,6 @@ sub _get_db_with_dnadb {
     $default_species_db->{'core'}->add_db_adaptor($db, $default_species_db->{$db} );
     $default_species_db->{$db}->add_db_adaptor('core', $default_species_db->{'core'} );
   }
-}
-
-sub _get_fasta_database{
-    my $self = shift;
-    my $db_info =  $self->_get_database_info( shift, 'DATABASE_FASTA' ) ||
-        die( "No fasta database for this species" );
-    my $adpt =  $self->_get_database( $db_info, 'Bio::EnsEMBL::DBSQL::DBAdaptor' );
-    $self->dynamic_use('Bio::EnsEMBL::ExternalData::FASTA::FASTAAdaptor');
-    return Bio::EnsEMBL::ExternalData::FASTA::FASTAAdaptor->new($adpt);
 }
 
 =head2 _get_userupload_database
