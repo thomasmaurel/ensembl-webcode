@@ -50,27 +50,40 @@ sub bigbed_adaptor {
  
   my $error;
   unless ($self->{'_cache'}->{'_bigbed_adaptor'}) { 
-    ## Check file is available before trying to load it 
-    ## (Bio::DB::BigFile does not catch C exceptions)
-    my $headers = EnsEMBL::Web::File::Utils::URL::get_headers($self->my_config('url'), {
+    my $url = $self->my_config('url');
+    if ($url && $url =~ /^(http|ftp)/) { ## Actually a URL, not a local file
+      ## Check file is available before trying to load it 
+      ## (Bio::DB::BigFile does not catch C exceptions)
+      my $headers = EnsEMBL::Web::File::Utils::URL::get_headers($self->my_config('url'), {
                                                                     'hub' => $self->{'config'}->hub, 
                                                                     'no_exception' => 1
                                                             });
-    if ($headers) {
-      if ($headers->{'Content-Type'} !~ 'text/html') { ## Not being redirected to a webpage, so chance it!
-        my $ad = Bio::EnsEMBL::IO::Adaptor::BigBedAdaptor->new($self->my_config('url'));
-        $error = "Broken bigbed file" unless $ad->check;
-        $self->{'_cache'}->{'_bigbed_adaptor'} = $ad;
+      if ($headers) {
+        if ($headers->{'Content-Type'} !~ 'text/html') { ## Not being redirected to a webpage, so chance it!
+          my $ad = Bio::EnsEMBL::IO::Adaptor::BigBedAdaptor->new($self->my_config('url'));
+          $error = "Broken bigbed file" unless $ad->check;
+          $self->{'_cache'}->{'_bigbed_adaptor'} = $ad;
+        }
+        else {
+          $error = "File at URL ".$self->my_config('url')." does not appear to be of type BigBed; returned MIME type ".$headers->{'Content-Type'};
+        }
       }
       else {
-        $error = "File at URL ".$self->my_config('url')." does not appear to be of type BigBed; returned MIME type ".$headers->{'Content-Type'};
+        $error = "No HTTP headers returned by URL ".$self->my_config('url');
       }
-    }
+    } 
     else {
-      $error = "No HTTP headers returned by URL ".$self->my_config('url');
+<<<<<<< HEAD
+      my $ad = Bio::EnsEMBL::IO::Adaptor::BigBedAdaptor->new($self->my_config('url'));
+      $error = "Broken bigbed file" unless $ad->check;
+=======
+      my $ad = Bio::EnsEMBL::ExternalData::BigFile::BigBedAdaptor->new($self->my_config('url'));
+      $error = "Missing bigbed file" unless $ad->check;
+>>>>>>> postreleasefix/79
+      $self->{'_cache'}->{'_bigbed_adaptor'} = $ad;
     }
   }
-  $self->errorTrack("Could not retrieve file from trackhub") if $error;
+  $self->errorTrack("Could not retrieve file") if $error;
   return $self->{'_cache'}->{'_bigbed_adaptor'};
 }
 
@@ -243,24 +256,26 @@ sub draw_features {
   return join ' or ', @error;
 }
 
-=pod
-sub render_normal {
+sub render_as_alignment_nolabel {
   my $self = shift;
-  $self->SUPER::render_normal(8, 20);  
+  $self->SUPER::render_as_alignment_nolabel({'height' => 8, 'depth' => 20});  
 }
 
 sub render_compact {
   my $self = shift;
   $self->{'renderer_no_join'} = 1;
-  $self->SUPER::render_normal(8, 0);  
+  $self->SUPER::render_as_alignment_nolabel({'height' => 8, 'depth' => 0});  
 }
 
-sub render_labels {
+sub render_as_alignment_label {
   my $self = shift;
   $self->{'show_labels'} = 1;
-  $self->render_normal(@_);
+  $self->SUPER::render_as_alignment_label(@_);
 }
-=cut
+
+## Backwards compatibility
+sub render_normal { $_[0]->render_as_alignment_nolabel; }
+sub render_labels { $_[0]->render_as_alignment_label; }
 
 sub render_text { warn "No text renderer for bigbed\n"; return ''; }
 

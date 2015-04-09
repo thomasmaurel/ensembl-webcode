@@ -949,9 +949,7 @@ sub _add_datahub_tracks {
     
     if ($matrix) {
       my $caption = $track->{'shortLabel'};
-      if($parent->data->{'shortLabel'}) {
-        $caption .= " (\t>".$parent->data->{'shortLabel'}.")";
-      }
+      $source->{'section'} = $parent->data->{'shortLabel'};
       ($source->{'source_name'} = $track->{'longLabel'}) =~ s/_/ /g;
       $source->{'labelcaption'} = $caption;
      
@@ -1263,6 +1261,7 @@ sub _add_file_format_track {
     name        => $args{'source'}{'source_name'},
     caption     => exists($args{'source'}{'caption'}) ? $args{'source'}{'caption'} : $args{'source'}{'source_name'},
     labelcaption => $args{'source'}{'labelcaption'},
+    section     => $args{'source'}{'section'},
     url         => $url || $args{'source'}{'source_url'},
     description => $desc,
     %{$args{'options'}}
@@ -3057,8 +3056,8 @@ sub add_sequence_variations {
 sub add_sequence_variations_meta {
   my ($self, $key, $hashref, $options) = @_;
   my $menu = $self->get_node('variation');
-  my $prefix_caption = 'Variant - '; 
   my $suffix_caption = ' - short variants (SNPs and indels)';
+  my $short_suffix_caption = ' SNPs/indels';
   my $regexp_suffix_caption = $suffix_caption;
      $regexp_suffix_caption =~ s/\(/\\\(/;
      $regexp_suffix_caption =~ s/\)/\\\)/;
@@ -3102,10 +3101,12 @@ sub add_sequence_variations_meta {
       my $other_sources = ($menu_item->{'long_name'} =~ /all other sources/);
 
       $menu_item->{'long_name'} =~ s/ variants$/$suffix_caption/;
+      $menu_item->{'short_name'} =~ s/ variants$/$short_suffix_caption/;
 
       $node = $self->create_track($menu_item->{'key'}, $menu_item->{'long_name'}, {
         %$options,
-        caption     => $prefix_caption.$menu_item->{'long_name'},
+        caption     => $menu_item->{'long_name'},
+        labelcaption => $menu_item->{'short_name'},
         sources     => $other_sources ? undef : [ $temp_name ],
         description => $other_sources ? 'Sequence variants from all sources' : $hashref->{'source'}{'descriptions'}{$temp_name},
       });
@@ -3118,12 +3119,15 @@ sub add_sequence_variations_meta {
       }
 
       (my $temp_name = $menu_item->{'key'})       =~ s/^variation_set_//;
-      (my $caption   = $menu_item->{'long_name'}) =~ s/1000 Genomes/1KG/;  # shorten name for side of image
+      (my $caption   = $menu_item->{'long_name'});
+      (my $label_caption   = $menu_item->{'short_name'}) =~ s/1000 Genomes/1KG/;  # shorten name for side of image
+      $label_caption .= $short_suffix_caption;
       (my $set_name  = $menu_item->{'long_name'}) =~ s/All HapMap/HapMap/; # hack for HapMap set name - remove once variation team fix data for 68
       
       $node = $self->create_track($menu_item->{'key'}, $menu_item->{'long_name'}, {
         %$options,
-        caption     => $prefix_caption.$caption,
+        caption     => $caption,
+        labelcaption => $label_caption,
         sources     => undef,
         sets        => [ $temp_name ],
         set_name    => $set_name,

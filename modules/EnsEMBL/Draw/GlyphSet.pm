@@ -368,6 +368,36 @@ sub _render_text {
   return $header . join ("\t", @results) . "\r\n";
 }
 
+################# SUBTITLES #########################
+
+sub subtitle_text {
+  my ($self) = @_;
+
+  return $self->my_config('subtitle') || $self->my_config('caption');
+}
+
+sub use_subtitles {
+  my ($self) = @_;
+
+  return $self->supports_subtitles && $self->subtitle_text;
+}
+
+sub subtitle_height {
+  my ($self) = @_;
+
+  return ($self->use_subtitles?15:0);
+}
+
+sub subtitle_colour {
+  my ($self) = @_;
+
+  return 'slategray';
+}
+
+sub supports_subtitles {
+  return 0;
+}
+
 ################### LABELS ##########################
 
 sub label {
@@ -538,9 +568,27 @@ sub _split_label {
   return (\@split,$text,0);
 }
 
+sub wrap {
+  my ($self,$text,$width,$font,$ptsize) = @_;
+
+  my ($split,$x,$trunc) = $self->_split_label($text,$width,$font,$ptsize);
+  return [ map { $_->[0] } @$split ] unless $trunc;
+  # Split naively
+  # XXX probably slow: should do binary search
+  my @out = ('');
+  foreach my $t (split(//,$text)) {
+    my @sizes = $self->get_text_width(0,$out[-1].$t,'',font => $font, ptsize => $ptsize);
+    if($sizes[2]>$width) {
+      push @out,'';
+    }
+    $out[-1].=$t;
+  }
+  return \@out;
+}
+
 sub recast_label {
   # XXX we should see which of these args are used and also pass as hash
-  my ($self,$pixperbp,$width,$rows,$text,$font,$ptsize,$colour) = @_;
+  my ($self,$width,$rows,$text,$font,$ptsize,$colour) = @_;
 
   my $caption = $self->my_label_caption;
   $text = $caption if $caption;
@@ -575,6 +623,7 @@ sub recast_label {
     halign => 'left',
     absolutex => 1,
     absolutewidth => 1,
+    absolutey => 1,
     width => $max_width,
     x => 0,
     y => 0,
@@ -1147,7 +1196,12 @@ sub bump_sorted_row {
   return 1e9; # If we get to this point we can't draw the feature so return a very large number!
 }
 
-sub max_label_rows { return $_[0]->my_config('max_label_rows') || 1; }
+sub max_label_rows {
+  my $out = $_[0]->my_config('max_label_rows');
+  return $out if $out;
+  $out = $_[0]->supports_subtitles?2:1;
+  return $out;
+}
 
 sub acos_in_degrees {
   my ($self, $x) = @_;
@@ -1172,7 +1226,7 @@ sub section_text {
 
 sub section_height {
   return 0 unless $_[0]->{'section_text'};
-  return 24;
+  return 32;
 }
 
 

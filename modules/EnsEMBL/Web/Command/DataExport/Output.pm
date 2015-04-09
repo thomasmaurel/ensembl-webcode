@@ -19,12 +19,15 @@ limitations under the License.
 package EnsEMBL::Web::Command::DataExport::Output;
 
 use strict;
+use warnings;
+no warnings 'uninitialized';
 
 use RTF::Writer;
 use Bio::AlignIO;
 use IO::String;
 use Bio::EnsEMBL::Compara::Graph::OrthoXMLWriter;
 use Bio::EnsEMBL::Compara::Graph::GeneTreePhyloXMLWriter;
+use Bio::EnsEMBL::Compara::Graph::GeneTreeNodePhyloXMLWriter;
 use Bio::EnsEMBL::Compara::Graph::CAFETreePhyloXMLWriter;
 
 use EnsEMBL::Web::File::User;
@@ -102,7 +105,7 @@ sub process {
         }
       }
       elsif ($in_bioperl) {
-        $error = (!$hub->param('seq_type') || $hub->param('seq_type') eq 'msa') 
+        $error = ($hub->param('align_type') || $hub->param('seq_type') =~ /msa/) 
                     ? $self->write_alignment($component)
                     : $self->write_homologue_seq($component);
       }
@@ -135,6 +138,9 @@ sub process {
     my @core_params = keys %{$hub->core_object('parameters')};
     push @core_params, qw(export_action data_type component align);
     push @core_params, $self->config_params; 
+    foreach my $species (grep { /species_/ } $hub->param) {
+      push @core_params, $species;
+    } 
     foreach (@core_params) {
       my @values = $hub->param($_);
       $url_params->{$_} = scalar @values > 1 ? \@values : $values[0];
@@ -444,12 +450,10 @@ sub write_alignment {
   my ($self, $component) = @_;
   my $hub     = $self->hub;
   my $align = $hub->param('align');
-  #foreach (grep { /species_$align/ } $hub->param) {
-  #  warn ">>> PARAM $_ = ".$hub->param($_);
-  #}
   my ($alignment, $result);
   my $flag = $align ? undef : 'sequence';
   my $data = $component->get_export_data($flag);
+  warn ">>> DATA $data";
   if (!$data) {
     $result->{'error'} = ['No data returned'];
   }
@@ -466,7 +470,12 @@ sub write_alignment {
     }
     else {
       if (ref($data) =~ 'AlignedMemberSet') {
-        $data = $data->get_SimpleAlign;
+        if ($hub->param('align_type') eq 'msa_dna' || $hub->param('seq_type') =~ /dna/) {
+          $data = $data->get_SimpleAlign(-SEQ_TYPE => 'cds');
+        }
+        else {
+          $data = $data->get_SimpleAlign;
+        }
       }
       if (ref($data) =~ 'SimpleAlign') {
         $alignment = $data;
@@ -501,7 +510,7 @@ sub write_homologue_seq {
     my $file_path = $file->absolute_write_path;
     $file->touch;
     my %params = (-format => $format, -ID_TYPE=>'STABLE_ID');
-    if ($hub->param('seq_type') eq 'dna') {
+    if ($hub->param('seq_type') =~ /_dna/ || $hub->param('align_type') eq 'msa_dna') {
       $params{'-SEQ_TYPE'} = 'cds';
     }
     eval {
@@ -551,7 +560,9 @@ sub write_phyloxml {
   my $tree = $component->get_export_data('genetree');
 
   my $type = ref($component) =~ /SpeciesTree/ ? 'CAFE' : 'Gene';
-  my $class = sprintf('Bio::EnsEMBL::Compara::Graph::%sTreePhyloXMLWriter', $type);
+  $type .= 'Tree';
+  $type .= 'Node' if ref($tree) =~ /Node/;
+  my $class = sprintf('Bio::EnsEMBL::Compara::Graph::%sPhyloXMLWriter', $type);
 
   my $handle = IO::String->new();
   my $w = $class->new(
@@ -568,9 +579,15 @@ sub write_orthoxml {
   my ($self, $component) = @_;
   my $hub     = $self->hub;
   my $cdb     = $hub->param('cdb') || 'compara';
-  my $method  = ref($component) =~ /HomologAlignment/ ? 'trees' : 'homologies';
-
   my ($data)  = $component->get_export_data('genetree');
+
+  my $method_type;
+  if (ref($component) =~ /ComparaTree/) {
+    $method_type = ref($data) =~ /Node/ ? 'subtrees' : 'trees';     
+  }
+  else {
+    $method_type = 'homologies';
+  }
 
   my $handle = IO::String->new();
   my $w = Bio::EnsEMBL::Compara::Graph::OrthoXMLWriter->new(
@@ -578,13 +595,13 @@ sub write_orthoxml {
     -SOURCE_VERSION => $hub->species_defs->SITE_RELEASE_VERSION,
     -HANDLE => $handle,
   );
-  $self->_writexml($method, $data, $handle, $w);
+  $self->_writexml($method_type, $data, $handle, $w);
 }
 
 sub _writexml{
-  my ($self, $method, $data, $handle, $w) = @_;
+  my ($self, $method_type, $data, $handle, $w) = @_;
   my $hub = $self->hub;
-  my $method = 'write_'.$method;
+  my $method = 'write_'.$method_type;
   $w->$method($data);
   $w->finish();
 
