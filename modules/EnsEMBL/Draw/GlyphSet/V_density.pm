@@ -103,7 +103,7 @@ sub build_tracks {
 		  $chr_min_data = $mean if ($mean < $chr_min_data || $chr_min_data eq undef); 
 		  $chr_max_data = $mean if $mean > $chr_max_data;
       ## Scale data for actual display
-      my $max = $chr_max_data || 1; 
+      my $max = $max_value || $chr_max_data || 1; 
       push @$scaled_scores, $mean/$max * $width;
 	  }
     $T->{'scores'} = $scaled_scores;
@@ -121,8 +121,8 @@ sub build_tracks {
     # max line (max)
     $self->push( $self->Line({
       'x'      => $v_offset ,
-      'y'      => $chr_max_data,
-     'width'  => $max_len - $v_offset ,
+      'y'      => $width,
+     'width'  => $max_len - $v_offset,
      'height' => 0,
      'colour' => 'lavender',
      'absolutey' => 1,
@@ -256,6 +256,11 @@ sub _histogram {
     }
     $old_y = $new_y;
   }
+}
+
+sub _set_scale {
+  my ($self, $T) = @_;
+  return $T->{'max_data'} ? $T->{'width'} / $T->{'max_data'} : $T->{'width'};
 }
 
 1;
