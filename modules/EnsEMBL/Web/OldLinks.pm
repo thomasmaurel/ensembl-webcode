@@ -112,6 +112,7 @@ our %mapping = (
                               { 'type' => 'Gene',                'action' => 'Expression',                   'initial_release' => 71 },
                               { 'type' => 'Gene',                'action' => 'SpeciesTree',                  'initial_release' => 69 },
                               { 'type' => 'Gene',                'action' => 'Alleles',                      'initial_release' => 78 },
+                              { 'type' => 'Gene',                'action' => 'ExpressionAtlas',              'initial_release' => 80 },
                               { 'type' => 'Transcript',          'action' => 'Ontology/Image',               'initial_release' => 60 },
                               { 'type' => 'Transcript',          'action' => 'Ontology/Table',               'initial_release' => 60 },
                               { 'type' => 'Transcript',          'action' => 'Variation_Transcript/Table',   'initial_release' => 68 },
@@ -143,6 +144,9 @@ our %mapping = (
   'dasconfview'           => [{ 'type' => 'UserData',            'action' => 'Attach',                       'initial_release' => 1  }],
   'helpview'              => [{ 'type' => 'Help',                'action' => 'Search',                       'initial_release' => 34 }],
   'miscsetview'           => [{ 'type' => 'Location',            'action' => 'Miscset',                      'initial_release' => 34 }],
+
+  # Renamed
+  'Variation/Individual'  => [{ 'type' => 'Variation',           'action' => 'Sample',                        'initial_release' => 81 }],
 );
 
 sub get_redirect {

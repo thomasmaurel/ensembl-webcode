@@ -306,6 +306,7 @@ sub hover_labels {
     next if $done{$label->{'class'}};
     
     my $desc   = join '', map "<p>$_</p>", split /; /, $label->{'desc'};
+    $desc     .= $label->{'extra_desc'};
     my $subset = $label->{'subset'};
     my $renderers;
     
